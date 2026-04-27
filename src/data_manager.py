@@ -92,6 +92,23 @@ class P1eFileSummary:
     issue_codes: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class GoldenDataFrameSummary:
+    """Summary for a fully joined yearly input dataframe."""
+
+    year: int
+    interval_count: int
+    first_timestamp: pd.Timestamp | None
+    last_timestamp: pd.Timestamp | None
+    total_import_kwh: float
+    total_export_kwh: float
+    total_solar_kwh: float
+    total_demand_kwh: float
+    missing_price_count: int
+    issue_count: int
+    issue_codes: tuple[str, ...]
+
+
 class DataManager:
     """Prepare historical input data for simulation."""
 
@@ -150,6 +167,67 @@ class DataManager:
             if status.label.startswith("P1e") and status.exists:
                 summaries.append(self.summarize_p1e_file(status.path))
         return summaries
+
+    def summarize_available_golden_dataframes(self) -> list[GoldenDataFrameSummary]:
+        summaries: list[GoldenDataFrameSummary] = []
+        for year in (2024, 2025):
+            paths = self.get_year_resource_paths(year)
+            if all(path.exists() for path in paths.values()):
+                result = self.build_golden_dataframe(
+                    paths["p1e"],
+                    paths["prices"],
+                    paths["solar"],
+                )
+                summaries.append(self.summarize_golden_dataframe(year, result))
+        return summaries
+
+    def get_year_resource_paths(self, year: int) -> dict[str, Path]:
+        filenames = {
+            2024: {
+                "p1e": "P1e-2024-1-1-2024-12-31.csv",
+                "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2024.csv",
+                "solar": "history HA 2024.csv",
+            },
+            2025: {
+                "p1e": "P1e-2025-1-1-2025-12-31.csv",
+                "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2025.csv",
+                "solar": "history HA 2025.csv",
+            },
+        }
+        if year not in filenames:
+            raise ValueError(f"Unsupported scenario year: {year}")
+        return {key: self.resources_path / filename for key, filename in filenames[year].items()}
+
+    def summarize_golden_dataframe(
+        self,
+        year: int,
+        result: DataManagerResult,
+    ) -> GoldenDataFrameSummary:
+        dataframe = result.dataframe
+        issue_codes = tuple(sorted({issue.code for issue in result.report.issues}))
+
+        if dataframe.empty:
+            first_timestamp = None
+            last_timestamp = None
+        else:
+            first_timestamp = pd.Timestamp(dataframe.index.min())
+            last_timestamp = pd.Timestamp(dataframe.index.max())
+
+        return GoldenDataFrameSummary(
+            year=year,
+            interval_count=len(dataframe),
+            first_timestamp=first_timestamp,
+            last_timestamp=last_timestamp,
+            total_import_kwh=self._sum_column(dataframe, "import_kwh"),
+            total_export_kwh=self._sum_column(dataframe, "export_kwh"),
+            total_solar_kwh=self._sum_column(dataframe, "solar_kwh"),
+            total_demand_kwh=self._sum_column(dataframe, "demand_kwh"),
+            missing_price_count=int(dataframe["spot_price_eur_per_kwh"].isna().sum())
+            if "spot_price_eur_per_kwh" in dataframe
+            else 0,
+            issue_count=len(result.report.issues),
+            issue_codes=issue_codes,
+        )
 
     def load_price_csv(self, path: str | Path) -> pd.DataFrame:
         dataframe = pd.read_csv(path, sep=";", decimal=",")
@@ -379,6 +457,12 @@ class DataManager:
                 "data_quality_flags": pd.Series(dtype="object"),
             }
         ).set_index("timestamp_nl", drop=False)
+
+    @staticmethod
+    def _sum_column(dataframe: pd.DataFrame, column: str) -> float:
+        if column not in dataframe or dataframe.empty:
+            return 0.0
+        return float(dataframe[column].sum())
 
     @staticmethod
     def _validate_columns(columns: Iterable[str], required: Iterable[str]) -> None:

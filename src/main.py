@@ -56,6 +56,28 @@ def main() -> None:
     ]
     st.dataframe(summary_rows, use_container_width=True, hide_index=True)
 
+    st.subheader("Golden DataFrame samenvatting")
+    with st.spinner("P1e, prijzen en solar combineren..."):
+        golden_summaries = data_manager.summarize_available_golden_dataframes()
+
+    golden_rows = [
+        {
+            "jaar": summary.year,
+            "intervallen": summary.interval_count,
+            "eerste_timestamp": summary.first_timestamp,
+            "laatste_timestamp": summary.last_timestamp,
+            "import_kwh": round(summary.total_import_kwh, 3),
+            "export_kwh": round(summary.total_export_kwh, 3),
+            "solar_kwh": round(summary.total_solar_kwh, 3),
+            "verbruik_kwh": round(summary.total_demand_kwh, 3),
+            "missende_prijzen": summary.missing_price_count,
+            "meldingen": summary.issue_count,
+            "melding_codes": ", ".join(summary.issue_codes),
+        }
+        for summary in golden_summaries
+    ]
+    st.dataframe(golden_rows, use_container_width=True, hide_index=True)
+
 
 if __name__ == "__main__":
     main()

@@ -47,4 +47,6 @@
 2026-04-27 | codex   | test   | Nieuwe DataManager-tests nog niet uitgevoerd: buiten-sandbox pytest-aanvraag geweigerd door usage/approval-limiet
 2026-04-27 | codex   | test   | pytest.ini toegevoegd zodat tests ook buiten projectroot `src` kunnen importeren
 2026-04-27 | codex   | test   | DataManager unit tests succesvol uitgevoerd: 11 tests groen
+2026-04-27 | codex   | impl   | Golden DataFrame samenvatting toegevoegd aan DataManager en Streamlit datastatus
+2026-04-27 | codex   | test   | DataManager unit tests succesvol uitgevoerd: 12 tests groen
 2026-04-27 | codex   | setup  | GitHub-publicatie voorbereid: README.md en .gitignore toegevoegd; resources uitgesloten
