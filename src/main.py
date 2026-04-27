@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from data_manager import DataManager
-from sim_engine import BatteryConfig, SimEngine
+from sim_engine import BatteryConfig, ModeConfig, SimEngine
 from tariff_engine import TariffEngine
 
 
@@ -169,6 +169,60 @@ def main() -> None:
                 }
             )
     st.dataframe(mode_1_rows, use_container_width=True, hide_index=True)
+
+    st.subheader("Modus 2 voorbeeld: slim laden zonder teruglevering")
+    min_margin_eur_per_kwh = st.number_input(
+        "Minimale marge netladen (EUR/kWh)",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.01,
+    )
+    mode_2_rows = []
+    with st.spinner("Modus 2 voorbeeldsimulatie uitvoeren..."):
+        for year in (2024, 2025):
+            paths = data_manager.get_year_resource_paths(year)
+            if not all(path.exists() for path in paths.values()):
+                continue
+            golden = data_manager.build_golden_dataframe(
+                paths["p1e"],
+                paths["prices"],
+                paths["solar"],
+            )
+            priced = tariff_engine.apply_prices(golden.dataframe)
+            simulated = sim_engine.simulate_mode_2(
+                priced,
+                battery_config,
+                ModeConfig(min_margin_eur_per_kwh=min_margin_eur_per_kwh),
+            )
+            mode_2_rows.append(
+                {
+                    "jaar": year,
+                    "import_zonder_batterij_kwh": round(
+                        float(simulated["import_zonder_batterij_kwh"].sum()), 3
+                    ),
+                    "import_met_batterij_kwh": round(
+                        float(simulated["import_met_batterij_kwh"].sum()), 3
+                    ),
+                    "export_zonder_batterij_kwh": round(
+                        float(simulated["export_zonder_batterij_kwh"].sum()), 3
+                    ),
+                    "export_met_batterij_kwh": round(
+                        float(simulated["export_met_batterij_kwh"].sum()), 3
+                    ),
+                    "geladen_solar_kwh": round(float(simulated["laad_uit_solar_kwh"].sum()), 3),
+                    "netladen_kwh": round(float(simulated["laad_uit_net_kwh"].sum()), 3),
+                    "ontladen_huis_kwh": round(
+                        float(simulated["ontlaad_naar_huis_kwh"].sum()), 3
+                    ),
+                    "batterij_export_kwh": round(float(simulated["ontlaad_naar_net_kwh"].sum()), 3),
+                    "verlies_kwh": round(float(simulated["round_trip_loss_kwh"].sum()), 3),
+                    "eind_soc_kwh": round(float(simulated["soc_kwh"].iloc[-1]), 3)
+                    if not simulated.empty
+                    else 0.0,
+                }
+            )
+    st.dataframe(mode_2_rows, use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":

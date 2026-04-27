@@ -53,4 +53,7 @@
 2026-04-27 | codex   | test   | DataManager en TariffEngine unit tests succesvol uitgevoerd: 17 tests groen
 2026-04-27 | codex   | impl   | SimEngine Modus 1 toegevoegd met SoC, rendement, vermogensgrenzen en Streamlit voorbeeldsimulatie
 2026-04-27 | codex   | test   | DataManager, TariffEngine en SimEngine Modus 1 unit tests succesvol uitgevoerd: 22 tests groen
+2026-04-27 | codex   | impl   | SimEngine Modus 2 toegevoegd met day-ahead look-ahead, netladen zonder export en margeconditie
+2026-04-27 | codex   | impl   | Streamlit uitgebreid met Modus 2 voorbeeldsimulatie en minimale marge-invoer
+2026-04-27 | codex   | test   | DataManager, TariffEngine en SimEngine Modus 1/2 unit tests succesvol uitgevoerd: 28 tests groen
 2026-04-27 | codex   | setup  | GitHub-publicatie voorbereid: README.md en .gitignore toegevoegd; resources uitgesloten
