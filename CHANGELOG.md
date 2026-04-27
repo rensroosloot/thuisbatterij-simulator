@@ -30,6 +30,7 @@
 2026-04-27 | gemini  | DS     | DS-001 v1.0 aangemaakt: Architectuur, "Golden DataFrame" definitie en vectorisatie-strategie vastgelegd
 2026-04-27 | gemini  | DS     | DS-001 v1.1: 9 reviewpunten Codex verwerkt (Golden DataFrame uitgebreid, look-ahead logica, DST-volgorde, degradatieformule, start.bat pip-check)
 2026-04-27 | gemini  | review | DS-001 v1.2: Reviewronde Gemini afgerond; positief advies voor implementatie.
+2026-04-27 | gemini  | review | datamenagercodereview.md: Code review van de DataManager implementatie uitgevoerd; focus op P1e logica en memory efficiency.
 2026-04-27 | codex   | URS/FD | URS-001 v1.6 en FD-001 v1.8 door Rens goedgekeurd; status bijgewerkt
 2026-04-27 | codex   | DS     | DS-001 v1.2 uitgewerkt tot implementatiegericht detailed design met datacontracten, algoritmes, validatie en teststrategie
 2026-04-27 | codex   | DS     | DS-001 traceerbaarheid uitgebreid met FD-verwijzingen; Gemini-reviewpunten expliciet afgevinkt in reviewhistorie
@@ -57,3 +58,38 @@
 2026-04-27 | codex   | impl   | Streamlit uitgebreid met Modus 2 voorbeeldsimulatie en minimale marge-invoer
 2026-04-27 | codex   | test   | DataManager, TariffEngine en SimEngine Modus 1/2 unit tests succesvol uitgevoerd: 28 tests groen
 2026-04-27 | codex   | setup  | GitHub-publicatie voorbereid: README.md en .gitignore toegevoegd; resources uitgesloten
+2026-04-27 | codex   | impl   | SimEngine Modus 3 toegevoegd met drempel/percentielgestuurd netladen, margeconditie en batterij-export
+2026-04-27 | codex   | test   | DataManager, TariffEngine en SimEngine Modus 1/2/3 unit tests succesvol uitgevoerd: 35 tests groen
+2026-04-27 | codex   | impl   | TariffEngine uitgebreid met kosten mét batterij en Streamlit toont jaarkosten/besparing per modus
+2026-04-27 | codex   | test   | Kostenberekening met batterij toegevoegd; volledige unit test suite succesvol uitgevoerd: 37 tests groen
+2026-04-27 | codex   | impl   | ResultCalculator toegevoegd met financiele en technische KPI's voor simulaties
+2026-04-27 | codex   | test   | ResultCalculator unit tests toegevoegd; volledige unit test suite succesvol uitgevoerd: 42 tests groen
+2026-04-27 | codex   | impl   | Capaciteitssweep toegevoegd met C-rate, lineair prijsmodel, marginale opbrengst en aanbevelingscriterium
+2026-04-27 | codex   | test   | Capaciteitssweep unit tests toegevoegd; volledige unit test suite succesvol uitgevoerd: 46 tests groen
+2026-04-27 | codex   | impl   | Exporter toegevoegd met CSV/Excel exports voor KPI- en sweepresultaten in Streamlit
+2026-04-27 | codex   | test   | Exporter unit tests toegevoegd; volledige unit test suite succesvol uitgevoerd: 48 tests groen
+2026-04-27 | codex   | impl   | Oude browsertool als referentie gebruikt: Streamlit caching, Plotly kostengrafieken, dagaggregaties en tijdreeks-CSV toegevoegd
+2026-04-27 | codex   | test   | Exporter tijdreekskolommen getest; volledige unit test suite succesvol uitgevoerd: 49 tests groen
+2026-04-27 | codex   | impl   | Laadvermogen en ontlaadvermogen gesplitst in Streamlit en capaciteitssweep
+2026-04-27 | codex   | test   | Gescheiden laad/ontlaad C-rate in sweep getest; volledige unit test suite succesvol uitgevoerd: 49 tests groen
+2026-04-27 | codex   | impl   | Streamlit simulatie-invoer in updateformulier gezet zodat parameterwijzigingen pas na knopdruk doorrekenen
+2026-04-27 | codex   | test   | Streamlit entrypoint compileert; volledige unit test suite succesvol uitgevoerd: 49 tests groen
+2026-04-27 | codex   | impl   | Downloadknoppen aangepast met on_click=ignore zodat CSV/Excel downloads geen simulatie-rerun starten
+2026-04-27 | codex   | test   | Streamlit entrypoint compileert; volledige unit test suite succesvol uitgevoerd: 49 tests groen
+2026-04-27 | claude  | setup  | docs/reviews/ aangemaakt; CR-001 en DR-001 opgesteld; losse reviewbestanden geconsolideerd; agents.md §7 reviewconventies toegevoegd
+2026-04-27 | claude  | review | CR-001 bijgewerkt: 8 van 9 bevindingen afgedaan o.b.v. CHANGELOG + codecheck; CR-001-06 (category dtype) nog open. DR-001-03/04 opgelost via FD v1.5
+2026-04-27 | claude  | review | DR-001 volledig afgerond: 4 opgelost, 1 n.v.t., 5 uitgesteld. CR-001-06 TODO(codex) toegevoegd; CR-001 status: 1 open bevinding
+2026-04-27 | codex   | impl   | Scenarioselectie toegevoegd voor 2024, 2025 en gecombineerd; KPI's en sweep rekenen gecombineerde scenario's nu als jaargemiddelde
+2026-04-27 | codex   | impl   | CR-001-06 opgelost: data_quality_flags en actie gebruiken nu category dtype in DataManager en SimEngine
+2026-04-27 | codex   | impl   | Simulatie-UX verbeterd: scenarioselectie buiten formulier, defaults aangepast, NCW-toelichting toegevoegd en sweepgrafiek toont nu besparing per kWh batterijcapaciteit
+2026-04-27 | codex   | impl   | Capaciteitssweep ondersteunt nu vaste marktopties met echte capaciteit/prijs-combinaties naast lineair prijsmodel
+2026-04-27 | codex   | impl   | Terugleververgoeding configureerbaar gemaakt; simulaties en sweep kunnen nu met vaste lage of nulvergoeding rekenen voor 2027
+2026-04-27 | codex   | impl   | Modus 3 netladen kijkt nu 24 uur vooruit naar verwacht tekort voor zelfvoorziening en vereist configureerbare minimale prijsstijging boven rendementsverlies
+2026-04-27 | codex   | impl   | Modus 3 vereenvoudigd: netladen gebruikt alleen 24u tekort plus minimale prijsstijging; export blijft gestuurd via exportdrempel of exportpercentiel
+2026-04-27 | codex   | impl   | UI en sweep vereenvoudigd naar twee strategieen: Modus 1 en Slimme modus; slimme modus gebruikt de 24u tekortlogica voor eigen verbruik
+2026-04-27 | codex   | impl   | Slimme modus laad nu alleen bij verwacht 24u tekort en wanneer huidig interval ook een lokaal gunstig koopmoment is; overagressief vroeg inkopen voorkomen
+2026-04-27 | codex   | impl   | Slimme modus reserve verfijnd tot tekort voor de volgende betekenisvolle zonne-laadkans; voorkomt onnodig laden voor tekorten die overdag door zon kunnen worden opgevangen
+2026-04-27 | codex   | test   | Slimme modus prijskijkvenster afgedekt met tests: voor 13:00 alleen resterende dagprijzen, na 13:00 komende 24 uur
+2026-04-27 | codex   | impl   | Slimme modus losgetrokken van oude exportmodus; UI en sweep rekenen nu met een aparte niet-exporterende simulate_smart_mode
+2026-04-27 | codex   | impl   | Slimme modus sterk versneld: publicatie-afhankelijke prijslookahead gevectoriseerd, simulatietijd van ~32s naar ~0.6s per jaar
+2026-04-27 | codex   | docs   | URS, FD, DS en TP bijgewerkt naar twee modi, geen batterij-export, 13:00-prijspublicatie en actuele slimme-modus tests

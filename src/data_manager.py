@@ -19,6 +19,24 @@ P1E_REQUIRED_COLUMNS = (
 PRICE_REQUIRED_COLUMNS = ("datum_nl", "prijs_excl_belastingen")
 HA_REQUIRED_COLUMNS = ("entity_id", "state", "last_changed")
 SOLAR_LIFETIME_ENTITY = "sensor.gerardus_total_energieopbrengst_levenslang"
+RESOURCE_FILES = {
+    2024: {
+        "p1e": "P1e-2024-1-1-2024-12-31.csv",
+        "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2024.csv",
+        "solar": "history HA 2024.csv",
+    },
+    2025: {
+        "p1e": "P1e-2025-1-1-2025-12-31.csv",
+        "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2025.csv",
+        "solar": "history HA 2025.csv",
+    },
+}
+RESOURCE_LABELS = {
+    "p1e": "P1e",
+    "prices": "Prijzen",
+    "solar": "Home Assistant",
+}
+DATA_QUALITY_FLAG_DTYPE = pd.CategoricalDtype(categories=("",))
 
 
 @dataclass(frozen=True)
@@ -116,26 +134,18 @@ class DataManager:
         self.resources_path = Path(resources_path)
 
     def get_resource_statuses(self) -> list[ResourceFileStatus]:
-        expected_files = {
-            "P1e 2024": "P1e-2024-1-1-2024-12-31.csv",
-            "P1e 2025": "P1e-2025-1-1-2025-12-31.csv",
-            "Prijzen 2024": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2024.csv",
-            "Prijzen 2025": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2025.csv",
-            "Home Assistant 2024": "history HA 2024.csv",
-            "Home Assistant 2025": "history HA 2025.csv",
-        }
-
         statuses: list[ResourceFileStatus] = []
-        for label, filename in expected_files.items():
-            path = self.resources_path / filename
-            statuses.append(
-                ResourceFileStatus(
-                    label=label,
-                    path=path,
-                    exists=path.exists(),
-                    size_bytes=path.stat().st_size if path.exists() else None,
+        for year, files in RESOURCE_FILES.items():
+            for resource_key, filename in files.items():
+                path = self.resources_path / filename
+                statuses.append(
+                    ResourceFileStatus(
+                        label=f"{RESOURCE_LABELS[resource_key]} {year}",
+                        path=path,
+                        exists=path.exists(),
+                        size_bytes=path.stat().st_size if path.exists() else None,
+                    )
                 )
-            )
         return statuses
 
     def summarize_p1e_file(self, path: str | Path) -> P1eFileSummary:
@@ -182,21 +192,12 @@ class DataManager:
         return summaries
 
     def get_year_resource_paths(self, year: int) -> dict[str, Path]:
-        filenames = {
-            2024: {
-                "p1e": "P1e-2024-1-1-2024-12-31.csv",
-                "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2024.csv",
-                "solar": "history HA 2024.csv",
-            },
-            2025: {
-                "p1e": "P1e-2025-1-1-2025-12-31.csv",
-                "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2025.csv",
-                "solar": "history HA 2025.csv",
-            },
-        }
-        if year not in filenames:
+        if year not in RESOURCE_FILES:
             raise ValueError(f"Unsupported scenario year: {year}")
-        return {key: self.resources_path / filename for key, filename in filenames[year].items()}
+        return {
+            key: self.resources_path / filename
+            for key, filename in RESOURCE_FILES[year].items()
+        }
 
     def summarize_golden_dataframe(
         self,
@@ -276,6 +277,11 @@ class DataManager:
             .dt.tz_localize(None)
         )
         working = working.sort_values("timestamp_nl")
+        working["timestamp_nl"] = working["timestamp_nl"].dt.floor("h")
+        working = (
+            working.groupby("timestamp_nl", sort=True, as_index=False)
+            .agg(state_numeric=("state_numeric", "last"))
+        )
         working["solar_hourly_kwh"] = working["state_numeric"].diff()
         working = working.iloc[1:].copy()
 
@@ -307,7 +313,10 @@ class DataManager:
         result = pd.DataFrame(quarter_rows)
         result = result.groupby("timestamp_nl", sort=True, as_index=False)["solar_kwh"].sum()
         result = result.set_index("timestamp_nl", drop=False)
-        result["data_quality_flags"] = ""
+        result["data_quality_flags"] = pd.Series(
+            pd.Categorical([""] * len(result), dtype=DATA_QUALITY_FLAG_DTYPE),
+            index=result.index,
+        )
         return DataManagerResult(result, report)
 
     def build_golden_dataframe(
@@ -323,7 +332,7 @@ class DataManager:
         report = DataQualityReport(
             issues=[*p1e_result.report.issues, *solar_result.report.issues]
         )
-        golden = p1e_result.dataframe.join(prices[["spot_price_eur_per_kwh"]], how="left")
+        golden = self._join_prices_to_intervals(p1e_result.dataframe, prices)
         golden = golden.join(solar_result.dataframe[["solar_kwh"]], how="left")
         golden["solar_kwh"] = golden["solar_kwh"].fillna(0.0)
 
@@ -335,8 +344,17 @@ class DataManager:
             )
 
         golden = self.calculate_energy_balance(golden)
+        balance_report = self.validate_energy_balance(
+            golden,
+            expected_import_kwh=float(p1e_result.dataframe["import_kwh"].sum()),
+            expected_export_kwh=float(p1e_result.dataframe["export_kwh"].sum()),
+        )
+        report.issues.extend(balance_report.issues)
         golden["timestamp_nl"] = golden.index
-        golden["data_quality_flags"] = ""
+        golden["data_quality_flags"] = pd.Series(
+            pd.Categorical([""] * len(golden), dtype=DATA_QUALITY_FLAG_DTYPE),
+            index=golden.index,
+        )
         return DataManagerResult(golden, report)
 
     def load_p1e_csv(self, path: str | Path) -> DataManagerResult:
@@ -383,7 +401,10 @@ class DataManager:
         if duplicate_count:
             report.add(
                 "P1E_DUPLICATE_LOCAL_TIMESTAMPS",
-                f"Found {duplicate_count} duplicated local timestamp rows; interval values were summed.",
+                (
+                    f"Found {duplicate_count} duplicated local timestamp rows; "
+                    "interval values were summed."
+                ),
             )
 
         grouped = (
@@ -396,7 +417,10 @@ class DataManager:
             )
             .reset_index()
         )
-        grouped["data_quality_flags"] = ""
+        grouped["data_quality_flags"] = pd.Categorical(
+            [""] * len(grouped),
+            dtype=DATA_QUALITY_FLAG_DTYPE,
+        )
         grouped = grouped.set_index("timestamp_nl", drop=False)
 
         return DataManagerResult(grouped, report)
@@ -445,8 +469,25 @@ class DataManager:
         if index.empty:
             return False
 
-        counts = pd.Series(1, index=index).groupby(index.normalize()).count()
+        spring_dst_candidates = index[(index.month == 3) & (index.day >= 25)]
+        if spring_dst_candidates.empty:
+            return False
+
+        counts = pd.Series(1, index=spring_dst_candidates).groupby(
+            spring_dst_candidates.normalize()
+        ).count()
         return bool((counts == 92).any())
+
+    @staticmethod
+    def _join_prices_to_intervals(
+        intervals: pd.DataFrame,
+        prices: pd.DataFrame,
+    ) -> pd.DataFrame:
+        price_series = prices["spot_price_eur_per_kwh"].sort_index()
+        interval_index = intervals.index
+        joined = intervals.copy()
+        joined["spot_price_eur_per_kwh"] = price_series.reindex(interval_index, method="ffill")
+        return joined
 
     @staticmethod
     def _empty_solar_frame() -> pd.DataFrame:
@@ -454,7 +495,7 @@ class DataManager:
             {
                 "timestamp_nl": pd.Series(dtype="datetime64[ns]"),
                 "solar_kwh": pd.Series(dtype="float64"),
-                "data_quality_flags": pd.Series(dtype="object"),
+                "data_quality_flags": pd.Series(dtype=DATA_QUALITY_FLAG_DTYPE),
             }
         ).set_index("timestamp_nl", drop=False)
 

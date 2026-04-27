@@ -132,28 +132,18 @@ Voor kernalgoritmes worden expected values handmatig in de tests vastgelegd. Gee
 | UT-M1-003 | Ontladen naar huis | Ontladen is gecapt op huishoudvraag | UR-04, DS §6.4 |
 | UT-M1-004 | Geen batterij-export | `ontlaad_naar_net_kwh = 0` voor alle intervallen | UR-04, DS §6.4 |
 
-### 5.5 SimEngine Modus 2
+### 5.5 SimEngine Slimme modus
 
 | ID | Test | Acceptatiecriterium | Trace |
 |---|---|---|---|
-| UT-M2-001 | Future max look-ahead | Hoogste toekomstige vermijdingsprijs binnen kalenderdag klopt | UR-04, DS §6.5 |
-| UT-M2-002 | Geen look-ahead over daggrens | Laatste interval gebruikt geen prijs van volgende dag | DS §6.5 |
-| UT-M2-003 | Netladen bij voordeel | Netladen alleen als prijsdelta groter is dan verlies + marge | UR-04, DS §6.5 |
-| UT-M2-004 | Niet netladen zonder voordeel | Geen netladen als conditie niet waar is | UR-04, DS §6.5 |
-| UT-M2-005 | Geen batterij-export | `ontlaad_naar_net_kwh = 0` voor alle intervallen | UR-04, DS §6.5 |
-| UT-M2-006 | Solar prioriteit | Solar-lading gaat voor netlading | FD §3.3, DS §6.5 |
-
-### 5.6 SimEngine Modus 3
-
-| ID | Test | Acceptatiecriterium | Trace |
-|---|---|---|---|
-| UT-M3-001 | Drempelvalidatie | `threshold_low >= threshold_high` blokkeert simulatie | FD FR-13, DS §10 |
-| UT-M3-002 | Percentielvalidatie | `percentile_low >= percentile_high` blokkeert simulatie | FD FR-13, DS §10 |
-| UT-M3-003 | Laden bij lage prijs | Netladen alleen als prijs- en margeconditie waar zijn | UR-04, DS §6.6 |
-| UT-M3-004 | Margeformule | `expected_export_revenue * RTR - buy_price >= margin` wordt gebruikt | FD §3.3, DS §6.6 |
-| UT-M3-005 | Export bij hoge prijs | Ontladen mag boven huishoudvraag uit naar netexport | UR-04, DS §6.6 |
-| UT-M3-006 | Percentiel-exportopbrengst | Verwachte opbrengst gebruikt hoge-prijsintervallen binnen dezelfde dag | DS §6.6 |
-| UT-M3-007 | Geen churn bij kleine marge | Batterij maakt geen cyclus als marge onvoldoende is | FD review, DS §6.6 |
+| UT-SM-001 | Future max look-ahead vóór 13:00 | Hoogste toekomstige vermijdingsprijs gebruikt alleen resterende dag | UR-04, DS §6.5 |
+| UT-SM-002 | Future max look-ahead na 13:00 | Hoogste toekomstige vermijdingsprijs mag komende 24 uur gebruiken | UR-04, DS §6.5 |
+| UT-SM-003 | Netladen bij voordeel | Netladen alleen als prijsratio groter is dan verlies of minimale prijsstijging | UR-04, DS §6.5 |
+| UT-SM-004 | Niet netladen zonder voordeel | Geen netladen als conditie niet waar is | UR-04, DS §6.5 |
+| UT-SM-005 | Geen batterij-export | `ontlaad_naar_net_kwh = 0` voor alle intervallen | UR-04, DS §6.5 |
+| UT-SM-006 | Solar prioriteit | Solar-lading gaat voor netlading | FD §3.3, DS §6.5 |
+| UT-SM-007 | Reserve stopt bij volgende solar window | Niet laden voor tekort dat dezelfde dag nog door solar kan worden opgevangen | FD §3.3, DS §6.5 |
+| UT-SM-008 | Lokaal gunstig koopmoment | Geen vroeg netladen als later binnen publicatievenster goedkoper kan worden geladen | DS §6.5 |
 
 ### 5.7 ResultCalculator
 
@@ -191,7 +181,7 @@ Voor kernalgoritmes worden expected values handmatig in de tests vastgelegd. Gee
 | IT-002 | Volledige pipeline 2025 | Data inlezen, simuleren en KPI's berekenen zonder onverwachte fout | UR-01 t/m UR-21 |
 | IT-003 | Gecombineerde run 2024+2025 | Degradatie loopt door, SoC reset per jaar | DS §6.3 |
 | IT-004 | Vier handmatige configuraties | Vier configuraties worden naast elkaar berekend en weergegeven | UR-07 |
-| IT-005 | Modusvergelijking | Modus 1, 2 en 3 geven verschillende traceerbare energiestromen | UR-04 |
+| IT-005 | Modusvergelijking | Modus 1 en slimme modus geven verschillende traceerbare energiestromen | UR-04 |
 | IT-006 | Sweep kleine set | Sweep met 3 punten geeft correcte tabel en grafiekdata | UR-20 |
 | IT-007 | Sweep 200 punten | Maximaal toegestane sweep blijft binnen acceptabele runtime | UR-20, FD FR-11 |
 | IT-008 | Ontbrekende prijs | Energiebalans blijft intact, kosteninterval = 0, melding zichtbaar | FD FR-08 |
@@ -207,7 +197,7 @@ Voor kernalgoritmes worden expected values handmatig in de tests vastgelegd. Gee
 | UI-001 | `start.bat` zonder venv | Venv wordt aangemaakt, requirements geinstalleerd, Streamlit start | UR-14, DS §11 |
 | UI-002 | `start.bat` met bestaande venv | Requirements worden opnieuw gecontroleerd/geinstalleerd | DS §11 |
 | UI-003 | Datastatusscherm | Bestanden, DST-meldingen en datakwaliteit worden getoond | UR-16 |
-| UI-004 | Modusafhankelijke velden | Modus 2/3 tonen alleen relevante velden | UR-15 |
+| UI-004 | Modusafhankelijke velden | Slimme modus toont alleen relevante velden | UR-15 |
 | UI-005 | Simuleerknop | Simulatie start alleen met geldige configuratie | FD §5 |
 | UI-006 | Resultatentabs | KPI's, grafieken, analyse en exports zijn bereikbaar | UR-11, UR-21 |
 | UI-007 | Dark mode | Dashboard opent standaard in vastgelegde visuele stijl | FD §3.5 |
@@ -220,8 +210,8 @@ Voor kernalgoritmes worden expected values handmatig in de tests vastgelegd. Gee
 |---|---|---|
 | AT-001 | Rens laadt de standaard 2024/2025 data | Tool meldt dat data is ingelezen en toont datakwaliteit begrijpelijk |
 | AT-002 | Rens simuleert Modus 1 met voorbeeldbatterij | Resultaat toont effect van zonne-overschot opslaan zonder netladen |
-| AT-003 | Rens simuleert Modus 2 | Resultaat toont slim netladen zonder batterij-export |
-| AT-004 | Rens simuleert Modus 3 | Resultaat toont arbitrage inclusief batterij-export |
+| AT-003 | Rens simuleert slimme modus | Resultaat toont slim netladen zonder batterij-export |
+| AT-004 | Rens vergelijkt Modus 1 en slimme modus | Verschil in netladen, import en besparing is inzichtelijk |
 | AT-005 | Rens vergelijkt meerdere batterijen | Dashboard maakt verschil in kosten, besparing en technische KPI's zichtbaar |
 | AT-006 | Rens zoekt optimale batterijgrootte | Sweep toont aanbevolen capaciteit en marginale meeropbrengst |
 | AT-007 | Rens exporteert resultaten | CSV/Excel kan buiten de tool worden gebruikt voor eigen analyse |
