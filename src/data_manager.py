@@ -65,11 +65,88 @@ class DataManagerResult:
     report: DataQualityReport
 
 
+@dataclass(frozen=True)
+class ResourceFileStatus:
+    """Status for one expected resource file."""
+
+    label: str
+    path: Path
+    exists: bool
+    size_bytes: int | None = None
+
+
+@dataclass(frozen=True)
+class P1eFileSummary:
+    """Human-readable summary for one P1e file."""
+
+    path: Path
+    interval_count: int
+    first_timestamp: pd.Timestamp | None
+    last_timestamp: pd.Timestamp | None
+    total_import_kwh: float
+    total_export_kwh: float
+    issue_count: int
+    issue_codes: tuple[str, ...]
+
+
 class DataManager:
     """Prepare historical input data for simulation."""
 
     def __init__(self, resources_path: str | Path = "resources") -> None:
         self.resources_path = Path(resources_path)
+
+    def get_resource_statuses(self) -> list[ResourceFileStatus]:
+        expected_files = {
+            "P1e 2024": "P1e-2024-1-1-2024-12-31.csv",
+            "P1e 2025": "P1e-2025-1-1-2025-12-31.csv",
+            "Prijzen 2024": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2024.csv",
+            "Prijzen 2025": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2025.csv",
+            "Home Assistant 2024": "history HA 2024.csv",
+            "Home Assistant 2025": "history HA 2025.csv",
+        }
+
+        statuses: list[ResourceFileStatus] = []
+        for label, filename in expected_files.items():
+            path = self.resources_path / filename
+            statuses.append(
+                ResourceFileStatus(
+                    label=label,
+                    path=path,
+                    exists=path.exists(),
+                    size_bytes=path.stat().st_size if path.exists() else None,
+                )
+            )
+        return statuses
+
+    def summarize_p1e_file(self, path: str | Path) -> P1eFileSummary:
+        result = self.load_p1e_csv(path)
+        dataframe = result.dataframe
+        issue_codes = tuple(sorted({issue.code for issue in result.report.issues}))
+
+        if dataframe.empty:
+            first_timestamp = None
+            last_timestamp = None
+        else:
+            first_timestamp = pd.Timestamp(dataframe.index.min())
+            last_timestamp = pd.Timestamp(dataframe.index.max())
+
+        return P1eFileSummary(
+            path=Path(path),
+            interval_count=len(dataframe),
+            first_timestamp=first_timestamp,
+            last_timestamp=last_timestamp,
+            total_import_kwh=float(dataframe["import_kwh"].sum()) if not dataframe.empty else 0.0,
+            total_export_kwh=float(dataframe["export_kwh"].sum()) if not dataframe.empty else 0.0,
+            issue_count=len(result.report.issues),
+            issue_codes=issue_codes,
+        )
+
+    def summarize_available_p1e_files(self) -> list[P1eFileSummary]:
+        summaries: list[P1eFileSummary] = []
+        for status in self.get_resource_statuses():
+            if status.label.startswith("P1e") and status.exists:
+                summaries.append(self.summarize_p1e_file(status.path))
+        return summaries
 
     def load_p1e_csv(self, path: str | Path) -> DataManagerResult:
         dataframe = pd.read_csv(path)
@@ -224,4 +301,3 @@ class DataManager:
                     f"(actual {actual_kwh:.3f} kWh, expected {expected_kwh:.3f} kWh)."
                 ),
             )
-

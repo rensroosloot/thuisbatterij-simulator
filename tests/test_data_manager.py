@@ -104,3 +104,36 @@ def test_energy_balance_tolerance_reports_deviation_above_one_percent():
 
     assert report.has_issue("ENERGY_BALANCE_IMPORT_OUT_OF_TOLERANCE")
     assert not report.has_issue("ENERGY_BALANCE_EXPORT_OUT_OF_TOLERANCE")
+
+
+def test_resource_statuses_report_expected_files(tmp_path):
+    (tmp_path / "P1e-2024-1-1-2024-12-31.csv").write_text("x", encoding="utf-8")
+
+    statuses = DataManager(tmp_path).get_resource_statuses()
+    status_by_label = {status.label: status for status in statuses}
+
+    assert status_by_label["P1e 2024"].exists
+    assert status_by_label["P1e 2024"].size_bytes == 1
+    assert not status_by_label["P1e 2025"].exists
+
+
+def test_summarize_p1e_file_returns_totals(tmp_path):
+    csv_path = tmp_path / "p1e.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "time,Import T1 kWh,Import T2 kWh,Export T1 kWh,Export T2 kWh",
+                "2024-01-01 00:00,10,20,1,2",
+                "2024-01-01 00:15,10.4,20.1,1,2.3",
+                "2024-01-01 00:30,10.6,20.4,1.2,2.5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    summary = DataManager(tmp_path).summarize_p1e_file(csv_path)
+
+    assert summary.interval_count == 2
+    assert summary.total_import_kwh == pytest.approx(1.0)
+    assert summary.total_export_kwh == pytest.approx(0.7)
+    assert summary.issue_codes == ("P1E_NO_PREVIOUS_READING",)

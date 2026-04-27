@@ -40,4 +40,6 @@
 2026-04-27 | codex   | impl   | Projectstructuur gestart: DataManager, eerste unit tests, requirements.txt en start.bat toegevoegd
 2026-04-27 | codex   | impl   | Minimale Streamlit-entrypoint toegevoegd en DataManager-tests robuuster gemaakt voor floatvergelijkingen
 2026-04-27 | codex   | test   | Unit tests nog niet uitvoerbaar in huidige shell: Python-runtime ontbreekt volgens py.exe launcher
+2026-04-27 | codex   | impl   | DataManager uitgebreid met resource-status en P1e-samenvatting; Streamlit datastatusscherm aangesloten
+2026-04-27 | codex   | test   | DataManager-tests opnieuw geprobeerd via venv; geblokkeerd door Access denied op Python313 executable
 2026-04-27 | codex   | setup  | GitHub-publicatie voorbereid: README.md en .gitignore toegevoegd; resources uitgesloten
