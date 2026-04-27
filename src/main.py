@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from data_manager import DataManager
+from tariff_engine import TariffEngine
 
 
 def main() -> None:
@@ -13,6 +14,7 @@ def main() -> None:
     st.caption("Feature branch: DataManager")
 
     data_manager = DataManager()
+    tariff_engine = TariffEngine()
 
     st.header("Datastatus")
     statuses = data_manager.get_resource_statuses()
@@ -77,6 +79,32 @@ def main() -> None:
         for summary in golden_summaries
     ]
     st.dataframe(golden_rows, use_container_width=True, hide_index=True)
+
+    st.subheader("Baseline jaarkosten zonder batterij")
+    cost_rows = []
+    with st.spinner("Baselinekosten berekenen..."):
+        for year in (2024, 2025):
+            paths = data_manager.get_year_resource_paths(year)
+            if not all(path.exists() for path in paths.values()):
+                continue
+            golden = data_manager.build_golden_dataframe(
+                paths["p1e"],
+                paths["prices"],
+                paths["solar"],
+            )
+            cost_summary = tariff_engine.summarize_baseline_costs(golden.dataframe)
+            cost_rows.append(
+                {
+                    "jaar": year,
+                    "importkosten_eur": round(cost_summary.import_costs_eur, 2),
+                    "exportopbrengst_eur": round(cost_summary.export_revenue_eur, 2),
+                    "intervalkosten_eur": round(cost_summary.interval_costs_eur, 2),
+                    "vaste_kosten_eur": round(cost_summary.fixed_costs_eur, 2),
+                    "totaal_eur": round(cost_summary.total_costs_eur, 2),
+                    "missende_prijzen": cost_summary.missing_price_count,
+                }
+            )
+    st.dataframe(cost_rows, use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
