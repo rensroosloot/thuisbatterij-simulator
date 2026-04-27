@@ -81,21 +81,39 @@ class TariffEngine:
 
     def summarize_baseline_costs(self, dataframe: pd.DataFrame) -> BaselineCostSummary:
         costed = self.apply_baseline_costs(dataframe)
-        has_price = costed["spot_price_eur_per_kwh"].notna()
+        return self.summarize_costed_dataframe(costed, cost_column="kosten_zonder_batterij_eur")
+
+    def summarize_costed_dataframe(
+        self,
+        dataframe: pd.DataFrame,
+        cost_column: str,
+    ) -> BaselineCostSummary:
+        self._validate_columns(
+            dataframe,
+            (
+                "spot_price_eur_per_kwh",
+                "import_zonder_batterij_kwh",
+                "export_zonder_batterij_kwh",
+                "buy_price_eur_per_kwh",
+                "sell_price_eur_per_kwh",
+                cost_column,
+            ),
+        )
+        has_price = dataframe["spot_price_eur_per_kwh"].notna()
 
         import_costs_eur = float(
             (
-                costed.loc[has_price, "import_zonder_batterij_kwh"]
-                * costed.loc[has_price, "buy_price_eur_per_kwh"]
+                dataframe.loc[has_price, "import_zonder_batterij_kwh"]
+                * dataframe.loc[has_price, "buy_price_eur_per_kwh"]
             ).sum()
         )
         export_revenue_eur = float(
             (
-                costed.loc[has_price, "export_zonder_batterij_kwh"]
-                * costed.loc[has_price, "sell_price_eur_per_kwh"]
+                dataframe.loc[has_price, "export_zonder_batterij_kwh"]
+                * dataframe.loc[has_price, "sell_price_eur_per_kwh"]
             ).sum()
         )
-        interval_costs_eur = float(costed["kosten_zonder_batterij_eur"].sum())
+        interval_costs_eur = float(dataframe[cost_column].sum())
         fixed_costs_eur = self.config.fixed_costs_eur_per_month * 12
 
         return BaselineCostSummary(
@@ -104,7 +122,7 @@ class TariffEngine:
             total_costs_eur=interval_costs_eur + fixed_costs_eur,
             import_costs_eur=import_costs_eur,
             export_revenue_eur=export_revenue_eur,
-            missing_price_count=int(costed["spot_price_eur_per_kwh"].isna().sum()),
+            missing_price_count=int(dataframe["spot_price_eur_per_kwh"].isna().sum()),
         )
 
     @staticmethod

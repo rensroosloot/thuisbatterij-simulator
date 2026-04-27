@@ -51,4 +51,6 @@
 2026-04-27 | codex   | test   | DataManager unit tests succesvol uitgevoerd: 12 tests groen
 2026-04-27 | codex   | impl   | TariffEngine toegevoegd met Frank Energie defaults, baselinekosten en Streamlit jaarkostentabel
 2026-04-27 | codex   | test   | DataManager en TariffEngine unit tests succesvol uitgevoerd: 17 tests groen
+2026-04-27 | codex   | impl   | SimEngine Modus 1 toegevoegd met SoC, rendement, vermogensgrenzen en Streamlit voorbeeldsimulatie
+2026-04-27 | codex   | test   | DataManager, TariffEngine en SimEngine Modus 1 unit tests succesvol uitgevoerd: 22 tests groen
 2026-04-27 | codex   | setup  | GitHub-publicatie voorbereid: README.md en .gitignore toegevoegd; resources uitgesloten
