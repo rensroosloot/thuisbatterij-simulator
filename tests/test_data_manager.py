@@ -137,3 +137,84 @@ def test_summarize_p1e_file_returns_totals(tmp_path):
     assert summary.total_import_kwh == pytest.approx(1.0)
     assert summary.total_export_kwh == pytest.approx(0.7)
     assert summary.issue_codes == ("P1E_NO_PREVIOUS_READING",)
+
+
+def test_price_csv_parser_handles_semicolon_and_decimal_comma(tmp_path):
+    csv_path = tmp_path / "prices.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "datum_nl;datum_utc;prijs_excl_belastingen",
+                '"2024-01-01 00:00:00";"2023-12-31 23:00:00";0,123456',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    prices = DataManager(tmp_path).load_price_csv(csv_path)
+
+    assert prices.loc[pd.Timestamp("2024-01-01 00:00:00"), "spot_price_eur_per_kwh"] == (
+        pytest.approx(0.123456)
+    )
+
+
+def test_solar_lifetime_is_distributed_to_quarters_with_energy_conservation():
+    raw = pd.DataFrame(
+        {
+            "entity_id": [
+                "sensor.gerardus_total_energieopbrengst_levenslang",
+                "sensor.gerardus_total_energieopbrengst_levenslang",
+            ],
+            "state": ["100.0", "101.0"],
+            "last_changed": ["2024-01-01T09:00:00.000Z", "2024-01-01T10:00:00.000Z"],
+        }
+    )
+
+    result = DataManager().preprocess_solar_lifetime(raw)
+
+    assert result.dataframe["solar_kwh"].sum() == pytest.approx(1.0)
+    assert result.dataframe["solar_kwh"].tolist() == pytest.approx([0.25, 0.25, 0.25, 0.25])
+
+
+def test_build_golden_dataframe_joins_p1e_price_and_solar(tmp_path):
+    p1e_path = tmp_path / "p1e.csv"
+    p1e_path.write_text(
+        "\n".join(
+            [
+                "time,Import T1 kWh,Import T2 kWh,Export T1 kWh,Export T2 kWh",
+                "2024-01-01 10:30,10,20,1,2",
+                "2024-01-01 10:45,10.4,20.1,1,2.3",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    price_path = tmp_path / "prices.csv"
+    price_path.write_text(
+        "\n".join(
+            [
+                "datum_nl;datum_utc;prijs_excl_belastingen",
+                '"2024-01-01 10:45:00";"2024-01-01 09:45:00";0,100000',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    solar_path = tmp_path / "solar.csv"
+    solar_path.write_text(
+        "\n".join(
+            [
+                "entity_id,state,last_changed",
+                "sensor.gerardus_total_energieopbrengst_levenslang,100.0,2024-01-01T09:00:00.000Z",
+                "sensor.gerardus_total_energieopbrengst_levenslang,101.0,2024-01-01T10:00:00.000Z",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = DataManager(tmp_path).build_golden_dataframe(p1e_path, price_path, solar_path)
+    row = result.dataframe.loc[pd.Timestamp("2024-01-01 10:45:00")]
+
+    assert row["import_kwh"] == pytest.approx(0.5)
+    assert row["export_kwh"] == pytest.approx(0.3)
+    assert row["spot_price_eur_per_kwh"] == pytest.approx(0.1)
+    assert row["solar_kwh"] == pytest.approx(0.25)
+    assert row["demand_kwh"] == pytest.approx(0.45)

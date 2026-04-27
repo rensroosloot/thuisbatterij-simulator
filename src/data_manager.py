@@ -16,6 +16,9 @@ P1E_REQUIRED_COLUMNS = (
     "Export T1 kWh",
     "Export T2 kWh",
 )
+PRICE_REQUIRED_COLUMNS = ("datum_nl", "prijs_excl_belastingen")
+HA_REQUIRED_COLUMNS = ("entity_id", "state", "last_changed")
+SOLAR_LIFETIME_ENTITY = "sensor.gerardus_total_energieopbrengst_levenslang"
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,116 @@ class DataManager:
                 summaries.append(self.summarize_p1e_file(status.path))
         return summaries
 
+    def load_price_csv(self, path: str | Path) -> pd.DataFrame:
+        dataframe = pd.read_csv(path, sep=";", decimal=",")
+        return self.preprocess_prices(dataframe)
+
+    def preprocess_prices(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        self._validate_columns(dataframe.columns, PRICE_REQUIRED_COLUMNS)
+
+        result = dataframe.copy()
+        result["timestamp_nl"] = pd.to_datetime(result["datum_nl"])
+        result["spot_price_eur_per_kwh"] = result["prijs_excl_belastingen"].astype(float)
+        result = result[["timestamp_nl", "spot_price_eur_per_kwh"]]
+        result = result.sort_values("timestamp_nl")
+        return result.set_index("timestamp_nl", drop=False)
+
+    def load_solar_csv(self, path: str | Path) -> DataManagerResult:
+        dataframe = pd.read_csv(path)
+        return self.preprocess_solar_lifetime(dataframe)
+
+    def preprocess_solar_lifetime(self, dataframe: pd.DataFrame) -> DataManagerResult:
+        report = DataQualityReport()
+        self._validate_columns(dataframe.columns, HA_REQUIRED_COLUMNS)
+
+        working = dataframe.loc[dataframe["entity_id"] == SOLAR_LIFETIME_ENTITY].copy()
+        if working.empty:
+            report.add(
+                "SOLAR_LIFETIME_SENSOR_MISSING",
+                f"No rows found for {SOLAR_LIFETIME_ENTITY}.",
+            )
+            return DataManagerResult(self._empty_solar_frame(), report)
+
+        working["state_numeric"] = pd.to_numeric(working["state"], errors="coerce")
+        invalid_count = int(working["state_numeric"].isna().sum())
+        if invalid_count:
+            report.add(
+                "SOLAR_INVALID_STATE",
+                f"Ignored {invalid_count} non-numeric solar lifetime rows.",
+            )
+        working = working.dropna(subset=["state_numeric"])
+        if working.empty:
+            return DataManagerResult(self._empty_solar_frame(), report)
+
+        working["timestamp_nl"] = (
+            pd.to_datetime(working["last_changed"], utc=True)
+            .dt.tz_convert("Europe/Amsterdam")
+            .dt.tz_localize(None)
+        )
+        working = working.sort_values("timestamp_nl")
+        working["solar_hourly_kwh"] = working["state_numeric"].diff()
+        working = working.iloc[1:].copy()
+
+        negative_mask = working["solar_hourly_kwh"] < 0
+        for timestamp in working.loc[negative_mask, "timestamp_nl"]:
+            report.add(
+                "SOLAR_NEGATIVE_DIFFERENCE",
+                "Negative solar lifetime difference detected and set to 0.",
+                pd.Timestamp(timestamp),
+                "solar_hourly_kwh",
+            )
+        working.loc[negative_mask, "solar_hourly_kwh"] = 0.0
+
+        quarter_rows = []
+        for row in working.itertuples(index=False):
+            interval_start = pd.Timestamp(row.timestamp_nl) - pd.Timedelta(hours=1)
+            quarter_kwh = float(row.solar_hourly_kwh) / 4
+            for offset in range(4):
+                quarter_rows.append(
+                    {
+                        "timestamp_nl": interval_start + pd.Timedelta(minutes=15 * offset),
+                        "solar_kwh": quarter_kwh,
+                    }
+                )
+
+        if not quarter_rows:
+            return DataManagerResult(self._empty_solar_frame(), report)
+
+        result = pd.DataFrame(quarter_rows)
+        result = result.groupby("timestamp_nl", sort=True, as_index=False)["solar_kwh"].sum()
+        result = result.set_index("timestamp_nl", drop=False)
+        result["data_quality_flags"] = ""
+        return DataManagerResult(result, report)
+
+    def build_golden_dataframe(
+        self,
+        p1e_path: str | Path,
+        price_path: str | Path,
+        solar_path: str | Path,
+    ) -> DataManagerResult:
+        p1e_result = self.load_p1e_csv(p1e_path)
+        prices = self.load_price_csv(price_path)
+        solar_result = self.load_solar_csv(solar_path)
+
+        report = DataQualityReport(
+            issues=[*p1e_result.report.issues, *solar_result.report.issues]
+        )
+        golden = p1e_result.dataframe.join(prices[["spot_price_eur_per_kwh"]], how="left")
+        golden = golden.join(solar_result.dataframe[["solar_kwh"]], how="left")
+        golden["solar_kwh"] = golden["solar_kwh"].fillna(0.0)
+
+        missing_prices = golden["spot_price_eur_per_kwh"].isna()
+        if missing_prices.any():
+            report.add(
+                "PRICE_MISSING_INTERVALS",
+                f"Missing spot price for {int(missing_prices.sum())} interval(s).",
+            )
+
+        golden = self.calculate_energy_balance(golden)
+        golden["timestamp_nl"] = golden.index
+        golden["data_quality_flags"] = ""
+        return DataManagerResult(golden, report)
+
     def load_p1e_csv(self, path: str | Path) -> DataManagerResult:
         dataframe = pd.read_csv(path)
         return self.preprocess_p1e(dataframe)
@@ -256,6 +369,16 @@ class DataManager:
 
         counts = pd.Series(1, index=index).groupby(index.normalize()).count()
         return bool((counts == 92).any())
+
+    @staticmethod
+    def _empty_solar_frame() -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "timestamp_nl": pd.Series(dtype="datetime64[ns]"),
+                "solar_kwh": pd.Series(dtype="float64"),
+                "data_quality_flags": pd.Series(dtype="object"),
+            }
+        ).set_index("timestamp_nl", drop=False)
 
     @staticmethod
     def _validate_columns(columns: Iterable[str], required: Iterable[str]) -> None:
