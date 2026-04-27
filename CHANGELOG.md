@@ -42,4 +42,5 @@
 2026-04-27 | codex   | test   | Unit tests nog niet uitvoerbaar in huidige shell: Python-runtime ontbreekt volgens py.exe launcher
 2026-04-27 | codex   | impl   | DataManager uitgebreid met resource-status en P1e-samenvatting; Streamlit datastatusscherm aangesloten
 2026-04-27 | codex   | test   | DataManager-tests opnieuw geprobeerd via venv; geblokkeerd door Access denied op Python313 executable
+2026-04-27 | codex   | test   | DataManager unit tests succesvol uitgevoerd buiten sandbox: 8 tests groen
 2026-04-27 | codex   | setup  | GitHub-publicatie voorbereid: README.md en .gitignore toegevoegd; resources uitgesloten
