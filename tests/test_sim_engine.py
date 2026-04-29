@@ -343,6 +343,52 @@ def test_mode_3_price_lookahead_after_1300_includes_next_24_hours():
     assert result.iloc[0]["future_max_avoid_price_next_24h_eur_per_kwh"] == pytest.approx(0.60)
 
 
+def test_mode_3_price_lookahead_after_1300_includes_full_next_calendar_day():
+    index = pd.to_datetime(
+        [
+            "2024-01-01 13:00",
+            "2024-01-01 23:45",
+            "2024-01-02 12:45",
+            "2024-01-02 23:45",
+        ]
+    )
+    dataframe = _baseline_frame([0.0, 1.0, 1.0, 1.0])
+    dataframe["buy_price_eur_per_kwh"] = [0.10, 0.20, 0.40, 0.80]
+    dataframe["sell_price_eur_per_kwh"] = [0.05, 0.05, 0.05, 0.05]
+    dataframe.index = index
+    mode_config = ModeConfig(
+        min_price_spread_pct=20.0,
+        threshold_high_eur_per_kwh=0.30,
+    )
+
+    result = SimEngine().simulate_mode_3(dataframe, BatteryConfig(), mode_config)
+
+    assert result.iloc[0]["future_max_avoid_price_next_24h_eur_per_kwh"] == pytest.approx(0.80)
+
+
+def test_mode_3_future_min_buy_price_after_1300_uses_full_next_calendar_day():
+    index = pd.to_datetime(
+        [
+            "2024-01-01 13:00",
+            "2024-01-01 23:45",
+            "2024-01-02 00:00",
+            "2024-01-02 23:45",
+        ]
+    )
+    dataframe = _baseline_frame([0.0, 1.0, 1.0, 1.0])
+    dataframe["buy_price_eur_per_kwh"] = [0.30, 0.25, 0.12, 0.18]
+    dataframe["sell_price_eur_per_kwh"] = [0.05, 0.05, 0.05, 0.05]
+    dataframe.index = index
+    mode_config = ModeConfig(
+        min_price_spread_pct=20.0,
+        threshold_high_eur_per_kwh=0.30,
+    )
+
+    result = SimEngine().simulate_mode_3(dataframe, BatteryConfig(), mode_config)
+
+    assert result.iloc[0]["future_min_buy_price_next_24h_eur_per_kwh"] == pytest.approx(0.12)
+
+
 def test_mode_3_reserve_stops_at_next_meaningful_solar_recharge_window():
     dataframe = _priced_frame_with_sell(
         [0.0, 1.0, -0.2, 2.0],

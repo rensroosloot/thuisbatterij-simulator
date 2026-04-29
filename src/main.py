@@ -386,6 +386,37 @@ def render_solar_self_consumption_summary(dataframe: pd.DataFrame, title: str) -
     )
 
 
+def render_battery_charge_source_summary(dataframe: pd.DataFrame, title: str) -> None:
+    required = {"laad_uit_solar_kwh", "laad_uit_net_kwh", "laad_kwh"}
+    if dataframe.empty or not required.issubset(dataframe.columns):
+        return
+
+    solar_charge_kwh = float(dataframe["laad_uit_solar_kwh"].sum())
+    net_charge_kwh = float(dataframe["laad_uit_net_kwh"].sum())
+    total_charge_kwh = float(dataframe["laad_kwh"].sum())
+
+    st.caption(title)
+    metric_columns = st.columns(3)
+    metric_columns[0].metric(
+        "Totaal geladen",
+        f"{total_charge_kwh:.1f} kWh",
+    )
+    metric_columns[1].metric(
+        "Geladen uit zon",
+        f"{solar_charge_kwh:.1f} kWh",
+        f"{(solar_charge_kwh / total_charge_kwh * 100):.1f}%"
+        if total_charge_kwh > 0
+        else None,
+    )
+    metric_columns[2].metric(
+        "Geladen uit net",
+        f"{net_charge_kwh:.1f} kWh",
+        f"{(net_charge_kwh / total_charge_kwh * 100):.1f}%"
+        if total_charge_kwh > 0
+        else None,
+    )
+
+
 def build_monthly_baseline_cost_table(
     dataframe: pd.DataFrame,
     tariff_engine: TariffEngine,
@@ -570,6 +601,14 @@ def main() -> None:
             value=0.8,
             step=0.1,
         )
+        battery_min_soc_pct = st.number_input(
+            "Minimale batterijlading (%)",
+            min_value=0.0,
+            max_value=50.0,
+            value=5.0,
+            step=1.0,
+            help="Ondergrens om een beschermende restlading in de batterij aan te houden.",
+        )
         purchase_price_eur = st.number_input(
             "Aanschafprijs voorbeeld (EUR)",
             min_value=0.0,
@@ -608,7 +647,13 @@ def main() -> None:
             max_value=200.0,
             value=20.0,
             step=1.0,
-            help="Netladen voor later verbruik alleen als de verwachte vermeden inkoopprijs in de komende 24 uur voldoende hoger ligt.",
+            help=(
+                "Netladen voor later verbruik alleen als de verwachte vermeden "
+                "inkoopprijs voldoende hoger ligt. Let op: de simulator gebruikt "
+                "altijd minstens de economische ondergrens uit het round-trip "
+                "rendement van de batterij. Met de huidige defaults is dat ongeveer "
+                "10,8%, dus 0%, 5% en 10% geven hetzelfde gedrag."
+            ),
         )
         sweep_enabled = st.checkbox("Capaciteitssweep uitvoeren", value=False)
         sweep_year = 2024
@@ -618,11 +663,13 @@ def main() -> None:
         sweep_capacity_step_kwh = 1.0
         sweep_charge_c_rate = 2.4 / 5.4
         sweep_discharge_c_rate = 0.8 / 5.4
+        sweep_min_soc_pct = battery_min_soc_pct
         sweep_purchase_base_eur = 0.0
         sweep_purchase_eur_per_kwh = 1000.0
         sweep_price_model = "Vaste marktopties"
         sweep_market_options_text = "\n".join(
             (
+                "0;0",
                 "2.4;1118.99",
                 "5.28;1847.99",
                 "8.16;2576.99",
@@ -674,6 +721,14 @@ def main() -> None:
                 "Sweep prijsmodel",
                 options=("Lineair prijsmodel", "Vaste marktopties"),
                 index=1,
+            )
+            sweep_min_soc_pct = st.number_input(
+                "Sweep minimale batterijlading (%)",
+                min_value=0.0,
+                max_value=50.0,
+                value=battery_min_soc_pct,
+                step=1.0,
+                help="Ondergrens die in alle doorgerekende sweep-opties wordt gebruikt.",
             )
             if sweep_price_model == "Lineair prijsmodel":
                 sweep_purchase_base_eur = st.number_input(
@@ -781,6 +836,7 @@ def main() -> None:
         discharge_power_kw=battery_discharge_power_kw,
         charge_efficiency_pct=95.0,
         discharge_efficiency_pct=95.0,
+        min_soc_pct=battery_min_soc_pct,
     )
     result_config = ResultConfig(
         purchase_price_eur=purchase_price_eur,
@@ -917,6 +973,7 @@ def main() -> None:
     render_battery_flow_chart(mode_1_detail, f"Modus 1 batterij-opname en afgifte {detail_year}")
     render_soc_chart(mode_1_detail, f"Modus 1 batterijlading {detail_year}")
     render_solar_self_consumption_summary(mode_1_detail, "Modus 1 zonne-zelfconsumptie")
+    render_battery_charge_source_summary(mode_1_detail, "Modus 1 laadbronnen batterij")
     render_soc_summary(mode_1_detail, "Modus 1 batterijgebruik")
     render_soc_distribution_chart(mode_1_detail, f"Modus 1 SoC-verdeling {detail_year}")
     render_simulation_exports(exporter, mode_1_detail, f"modus_1_{detail_year}")
@@ -937,6 +994,7 @@ def main() -> None:
     render_battery_flow_chart(smart_detail, f"Slimme modus batterij-opname en afgifte {detail_year}")
     render_soc_chart(smart_detail, f"Slimme modus batterijlading {detail_year}")
     render_solar_self_consumption_summary(smart_detail, "Slimme modus zonne-zelfconsumptie")
+    render_battery_charge_source_summary(smart_detail, "Slimme modus laadbronnen batterij")
     render_soc_summary(smart_detail, "Slimme modus batterijgebruik")
     render_soc_distribution_chart(smart_detail, f"Slimme modus SoC-verdeling {detail_year}")
     render_simulation_exports(exporter, smart_detail, f"slimme_modus_{detail_year}")
@@ -997,6 +1055,7 @@ def main() -> None:
                         capacity_step_kwh=sweep_capacity_step_kwh,
                         charge_c_rate=sweep_charge_c_rate,
                         discharge_c_rate=sweep_discharge_c_rate,
+                        min_soc_pct=sweep_min_soc_pct,
                         purchase_base_eur=sweep_purchase_base_eur,
                         purchase_eur_per_kwh=sweep_purchase_eur_per_kwh,
                         market_options=market_options,
