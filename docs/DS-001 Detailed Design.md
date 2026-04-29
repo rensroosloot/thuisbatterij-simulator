@@ -292,7 +292,7 @@ Intervalvolgorde:
 3. Als `netto_baseline_kwh > 0`: ontlaad naar huis met maximaal huishoudvraag, ontlaadvermogen en beschikbare SoC.
 4. Restant wordt import of solar-export.
 
-### 6.5 Modus 2 - Slim laden zonder teruglevering
+### 6.5 Slimme modus - Slim laden voor eigen verbruik
 
 Bronnen:
 - zonne-overschot;
@@ -306,25 +306,31 @@ Niet toegestaan:
 
 Look-ahead:
 
-Voor elk interval wordt binnen dezelfde kalenderdag de hoogste toekomstige vermijdingsprijs bepaald op intervallen met resterende huishoudvraag:
+Voor elk interval wordt de hoogste toekomstige vermijdingsprijs bepaald binnen het toegestane publicatievenster:
+- vóór 13:00: resterende intervallen van dezelfde kalenderdag;
+- vanaf 13:00: de komende 24 uur.
+
+De implementatie gebruikt twee gevectoriseerde reeksen:
 
 ```python
 candidate_price = buy_price_eur_per_kwh.where(netto_baseline_kwh > 0)
-future_max_avoid_price = (
-    candidate_price
-    .groupby(index.date)
-    .transform(lambda s: s.iloc[::-1].cummax().iloc[::-1].shift(-1))
-)
+same_day_future = candidate_price.groupby(index.normalize()).transform(...)
+next_24h_future = reverse_rolling_max(candidate_price, horizon=96)
+future_max_avoid_price = where(after_13_00, next_24h_future, same_day_future)
 ```
 
 Laadconditie voor netladen:
 
 ```python
-future_max_avoid_price > (
-    buy_price_eur_per_kwh / round_trip_efficiency
-    + min_margin_eur_per_kwh
+future_max_avoid_price >= buy_price_eur_per_kwh * max(
+    1 / round_trip_efficiency,
+    1 + min_price_spread_pct / 100,
 )
 ```
+
+Aanvullend geldt:
+- er moet een toekomstig tekort bestaan vóór de volgende betekenisvolle zonne-laadkans;
+- het huidige interval mag niet duurder zijn dan een later koopmoment binnen hetzelfde publicatievenster.
 
 Intervalvolgorde:
 
@@ -332,48 +338,6 @@ Intervalvolgorde:
 2. Als er geen zonne-laadactie is en de laadconditie waar is: laad uit net.
 3. Als de laadconditie niet waar is en er huishoudvraag is: ontlaad naar huis.
 4. Restant wordt import of solar-export.
-
-Netladen en ontladen mogen in hetzelfde interval niet allebei plaatsvinden.
-
-### 6.6 Modus 3 - Slim laden met teruglevering
-
-Bronnen:
-- zonne-overschot;
-- net bij lage prijs.
-
-Sinks:
-- huishoudvraag;
-- netexport bij hoge prijs.
-
-Toegestaan:
-- batterij-export naar het net.
-
-Beslisregels:
-
-- Drempelwaarde: laden als prijs lager is dan `threshold_low`; exporteren als prijs hoger is dan `threshold_high`.
-- Percentiel: laden onder `percentile_low` van de dag; exporteren boven `percentile_high` van de dag.
-- Validatie: laag moet altijd strikt lager zijn dan hoog.
-
-Minimale marge voor laden uit net:
-
-```python
-expected_export_revenue_eur_per_kwh * round_trip_efficiency
-- buy_price_eur_per_kwh
->= min_margin_eur_per_kwh
-```
-
-`expected_export_revenue_eur_per_kwh` is:
-
-- bij drempelwaarde: `threshold_high` vertaald naar all-in verkoopprijs indien nodig;
-- bij percentiel: de hoogste toekomstige `sell_price_eur_per_kwh` binnen dezelfde kalenderdag waarvoor de prijs boven het ingestelde hoge percentiel ligt. Dit sluit aan op FD §3.3 Modus 3: de verwachte exportopbrengst wordt afgeleid uit toekomstige hoge-prijsintervallen binnen de dag.
-
-Intervalvolgorde:
-
-1. Laad zonne-overschot zoals Modus 1.
-2. Als er geen zonne-laadactie is en laadconditie plus margeconditie waar zijn: laad uit net.
-3. Als export-/ontlaadconditie waar is: ontlaad. Eerst naar huishoudvraag, daarna resterend ontlaadpotentieel naar netexport.
-4. Als export-/ontlaadconditie niet waar is maar er huishoudvraag is: ontlaad naar huis als dit financieel niet slechter is dan import.
-5. Restant wordt import of export.
 
 Netladen en ontladen mogen in hetzelfde interval niet allebei plaatsvinden.
 
@@ -634,8 +598,7 @@ Numba is optioneel. De eerste implementatie mag pure Python/NumPy gebruiken zola
 | Solar | Energiebehoud bij uur-naar-kwartier verdeling |
 | Tarieven | Koop-/verkoopprijs en intervalkosten |
 | SimEngine modus 1 | Geen netladen, geen batterij-export, SoC-grenzen |
-| SimEngine modus 2 | Netladen alleen bij economische conditie, geen export, geen laden en ontladen tegelijk |
-| SimEngine modus 3 | Margeformule, export toegestaan, drempel/percentielvalidatie |
+| SimEngine slimme modus | Netladen alleen bij economische conditie, geen export, geen laden en ontladen tegelijk, 13:00-publicatieregel |
 | Degradatie | 2% per 100 cycli resulteert in correcte capaciteitsdaling |
 | Sweep | Puntentelling, C-rate, marginale meeropbrengst, max 200 punten |
 | Export | Vereiste kolommen aanwezig |

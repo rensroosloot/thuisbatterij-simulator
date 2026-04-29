@@ -210,7 +210,7 @@ Logica per kwartierinterval:
 
 ---
 
-**Modus 2 — Slim laden zonder teruglevering aan het net**
+**Slimme modus — Slim laden voor eigen verbruik**
 
 | Eigenschap | Waarde |
 |---|---|
@@ -218,98 +218,58 @@ Logica per kwartierinterval:
 | Netladen | Toegestaan als economische laadconditie vervuld (zie hieronder) |
 | Ontlaad-sink | Uitsluitend huishoudvraag |
 | Batterij-export naar net | Niet toegestaan |
-| Doel | Goedkope energie opslaan; dure import vermijden; rendementsverlies niet wegcijferen |
+| Doel | Goedkopere energie opslaan voor later eigen verbruik; dure import vermijden |
 
 **Optimalisatieperiode**
 
-De eenheid voor planningsbeslissingen is de **kalenderdag** (00:00–23:45 Nederlandse lokale tijd). Dit sluit aan op de day-ahead marktstructuur: alle kwartier-spotprijzen voor een dag zijn bij aanvang van die dag bekend. In de simulatie op historische data geldt volledige vooruitblik binnen de dag (perfect foresight binnen de optimalisatieperiode).
+De eenheid voor planningsbeslissingen is een **publicatie-afhankelijk look-ahead venster**. Dit sluit aan op de day-ahead marktstructuur waarin de prijzen voor de volgende 24 uur om 13:00 beschikbaar komen.
+
+- Vóór 13:00 lokale tijd mag de simulatie alleen gebruikmaken van prijzen voor de resterende intervallen van dezelfde kalenderdag.
+- Vanaf 13:00 lokale tijd mag de simulatie gebruikmaken van de komende 24 uur.
 
 **Economische laadconditie voor netladen**
 
-Netladen vanuit het net is in interval *t* uitsluitend toegestaan als aan **beide** onderstaande voorwaarden is voldaan:
+Netladen vanuit het net is in interval *t* uitsluitend toegestaan als aan **alle** onderstaande voorwaarden is voldaan:
 
-*Voorwaarde 1 — Verwachte eigen vraag aanwezig:*
-Er bestaat ten minste één later interval *t'* in dezelfde kalenderdag (*t' > t*) waarvoor geldt:
+*Voorwaarde 1 — Verwachte eigen vraag aanwezig vóór de volgende betekenisvolle zonne-laadkans:*
+Er bestaat ten minste één later interval *t'* binnen het toegestane publicatievenster waarvoor geldt:
 ```
 netto_baseline[t'] > 0
 ```
-waarbij `netto_baseline = verbruik_kwh − solar_kwh` op basis van de ongewijzigde invoerdata (zonder enig batterij-effect).
+waarbij `netto_baseline = verbruik_kwh − solar_kwh` op basis van de ongewijzigde invoerdata (zonder enig batterij-effect). De benodigde reserve wordt begrensd tot het tekort vóór de volgende betekenisvolle zonne-laadkans; de batterij laadt dus niet alvast voor tekorten die dezelfde dag nog door solar kunnen worden opgevangen.
 
-*Voorwaarde 2 — Economische rentabiliteit:*
+*Voorwaarde 2 — Economische rentabiliteit via prijsratio:*
 ```
-verwachte_vermijdingsprijs > laadprijs / round_trip_rendement + minimale_marge
+verwachte_vermijdingsprijs >= laadprijs × max(1 / round_trip_rendement, 1 + minimale_prijsstijging_pct / 100)
 ```
+
+*Voorwaarde 3 — Huidig interval is lokaal gunstig koopmoment:*
+De huidige `laadprijs[t]` mag niet hoger zijn dan een later gepubliceerde koopprijs binnen hetzelfde look-ahead venster.
 
 Waarbij:
 - `laadprijs [€/kWh]` = spotprijs[t] + inkoopvergoeding_inkoop + energiebelasting_inkoop
-- `verwachte_vermijdingsprijs [€/kWh]` = max(laadprijs[t']) over alle *t'* in de optimalisatieperiode waarvoor `netto_baseline[t'] > 0` en *t'* > *t*
+- `verwachte_vermijdingsprijs [€/kWh]` = max(laadprijs[t']) over alle gepubliceerde toekomstige *t'* waarvoor `netto_baseline[t'] > 0` en *t'* > *t*
 - `round_trip_rendement` = laadrendement × ontlaadrendement (als fractionele waarde, bijv. 0,90 × 0,92 = 0,828)
-- `minimale_marge [€/kWh]` = configureerbaar, standaard 0,00
+- `minimale_prijsstijging_pct` = configureerbaar, standaard 20%
 
-De voorwaarde garandeert dat elke kWh die nu wordt ingeladen, later ook financieel voordeel oplevert na correctie voor round-trip verlies én een eventuele veiligheidsdrempel.
+De voorwaarde garandeert dat elke kWh die nu wordt ingeladen, later ook financieel voordeel oplevert voor eigen verbruik na correctie voor round-trip verlies en de ingestelde minimale prijsstijging.
 
-**Nieuwe configureerbare parameter (Modus 2):**
+**Configureerbare parameter (Slimme modus):**
 
 | Parameter | Standaard | Eenheid |
 |---|---|---|
-| Minimale marge netladen | 0,00 | €/kWh |
+| Minimale prijsstijging | 20 | % |
 
 **Logica per kwartierinterval:**
 
 1. `netto = verbruik_kwh − solar_kwh`
 2. `netto < 0` (zonne-overschot): laad batterij vanuit solar (zie Modus 1, stap 2).
-3. `netto ≥ 0` én SoC < max SoC: evalueer economische laadconditie (beide voorwaarden):
-   - Bepaal `verwachte_vermijdingsprijs` = max(laadprijs) over resterende dag-intervallen met `netto_baseline > 0`.
-   - Controleer: `verwachte_vermijdingsprijs > laadprijs[t] / round_trip_rendement + minimale_marge`
-   - Én: er zijn dergelijke toekomstige intervallen aanwezig (Voorwaarde 1).
+3. `netto ≥ 0` én SoC < max SoC: evalueer de economische laadconditie.
+   - Bepaal `verwachte_vermijdingsprijs` = max(laadprijs) over gepubliceerde toekomstige intervallen met `netto_baseline > 0`.
+   - Controleer de prijsratio en het lokale koopmoment.
    - Bij vervulling: laad vanuit net met `min(max_laadvermogen_kwh, vrije_capaciteit_kwh / laadrendement)`. De batterij ontlaadt **niet** in dit interval (laden en ontladen zijn wederzijds uitsluitend; zie algemene regels).
 4. Laadconditie stap 3 **niet** vervuld én SoC > min SoC én netto > 0: ontlaad batterij met `min(netto, max_ontlaadvermogen_kwh, beschikbare_energie_kwh × ontlaadrendement)` — ontlading gecapt op netto; geen export.
 5. Resterende netto → import of solar-export naar net.
-
----
-
-**Modus 3 — Slim laden met teruglevering aan het net**
-
-| Eigenschap | Waarde |
-|---|---|
-| Laadenergie-bron | Zonne-overschot én net bij lage prijs |
-| Netladen | Toegestaan als prijs-conditie vervuld |
-| Ontlaad-sink | Huishoudvraag én netexport bij hoge prijs |
-| Batterij-export naar net | Toegestaan als prijs-conditie vervuld |
-| Doel | Volledige day-ahead arbitrage inclusief export |
-
-Prijscondities (configureerbaar — keuze uit één van twee):
-- **Drempelwaarde:** laad als `spotprijs_totaal < drempel_laag`; ontlaad/exporteer als `spotprijs_totaal > drempel_hoog` (vereist: `drempel_laag < drempel_hoog`; zie FR-13)
-- **Percentiel:** laad als `spotprijs_totaal < P_laag-percentiel`; ontlaad/exporteer als `spotprijs_totaal > P_hoog-percentiel` (percentielen configureerbaar, standaard P25/P75; vereist: `P_laag < P_hoog`; zie FR-13)
-
-**Minimale marge-conditie (aanvullend voor beide beslisregels):**
-
-De laad-conditie is alleen vervuld als tevens geldt:
-```
-verwachte_exportopbrengst × round_trip_rendement − laadprijs_interval ≥ minimale_marge
-```
-Waarbij:
-- `laadprijs_interval [€/kWh]` = spotprijs[t] + inkoopvergoeding_inkoop + energiebelasting_inkoop
-- `verwachte_exportopbrengst [€/kWh]`:
-  - Bij drempelwaarde: `drempel_hoog + inkoopvergoeding_teruglevering + energiebelasting_teruggave`
-  - Bij percentiel: `P_hoog_dagprijs + inkoopvergoeding_teruglevering + energiebelasting_teruggave`, waarbij `P_hoog_dagprijs` de P_hoog-percentielwaarde is van de spotprijs in die kalenderdag
-- `round_trip_rendement` = laadrendement × ontlaadrendement (fractionele waarde)
-- `minimale_marge [€/kWh]` = configureerbaar, standaard 0,00
-
-De formule berekent de netto winst per ingekochte kWh: revenue na round-trip verlies minus de werkelijke inkoopkosten. Dit is de economisch correcte arbitragetoets.
-
-**Configureerbare parameter (Modus 3):**
-
-| Parameter | Standaard | Eenheid |
-|---|---|---|
-| Minimale marge arbitrage | 0,00 | €/kWh |
-
-Logica per kwartierinterval:
-1. `netto = verbruik_kwh − solar_kwh`
-2. `netto < 0` (zonne-overschot): laad batterij vanuit solar (zie Modus 1, stap 2).
-3. `netto ≥ 0` én laad-conditie vervuld (prijsconditie én minimale marge; zie boven) én SoC < max SoC: laad batterij vanuit net.
-4. Ontlaad-conditie vervuld én SoC > min SoC: ontlaad batterij met `min(max_ontlaadvermogen_kwh, beschikbare_energie_kwh × ontlaadrendement)` — ontlading **niet** gecapt op netto; surplus boven huishoudvraag wordt als export aan het net geleverd.
-5. Resterende netto → import of export naar net.
 
 **SoC-tracking:**
 - SoC wordt bijgehouden in kWh (niet alleen %). Min/max SoC-grenzen worden afgedwongen per interval.
@@ -550,16 +510,11 @@ Vier panelen naast elkaar of in tabbladen:
 *Paneel B — Batterijconfiguraties*
 - Vier configuratie-slots (Config 1 t/m 4); elke slot heeft een aan/uit-schakelaar
 - Per slot: alle UR-03-parameters, met een naamveld (bijv. "SolarFlow 5 kWh")
-- Moduskeuze per slot (keuzelijst met drie opties):
+- Moduskeuze per slot (keuzelijst met twee opties):
   - **Modus 1 — Zelfconsumptie / nul-op-de-meter**
-  - **Modus 2 — Slim laden zonder teruglevering**
-  - **Modus 3 — Slim laden met teruglevering**
-- Bij **Modus 2**: aanvullende invoeroptie verschijnt:
-  - Invoerveld "Minimale marge netladen" (€/kWh, standaard 0,00) — drempel/percentiel zijn niet van toepassing; de economische laadconditie is zelfstandig
-- Bij **Modus 3**: aanvullende invoeropties verschijnen:
-  - Keuze beslisregel: Drempelwaarde of Percentiel
-  - Bij drempelwaarde: invoerveld laaddrempel (€/kWh) en ontlaaddrempel (€/kWh)
-  - Bij percentiel: schuifregelaar P_laag (standaard 25) en P_hoog (standaard 75)
+  - **Slimme modus — Slim laden voor eigen verbruik**
+- Bij **Slimme modus**: aanvullende invoeroptie verschijnt:
+  - Invoerveld "Minimale prijsstijging (%)" (standaard 20) — de slimme modus gebruikt geen batterij-exportregels
   - Invoerveld "Minimale marge arbitrage" (€/kWh, standaard 0,00) — geldt voor beide beslisregels
 
 *Paneel C — Capaciteitsoptimalisatie (optioneel)*

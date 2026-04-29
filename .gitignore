@@ -12,7 +12,7 @@ venv/
 # Local/runtime files
 .streamlit/secrets.toml
 *.log
+test results/
 
 # Source data is private and read-only in this project.
 resources/
-

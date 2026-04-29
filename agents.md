@@ -44,6 +44,8 @@ URS  →  FD  →  DS  →  Implementatie  →  Unittests  →  Integratietest  
 | `docs/URS-*.md` | Claude Code | Lezen, reviewcommentaar toevoegen |
 | `docs/FD-*.md` | Claude Code | Lezen, reviewcommentaar toevoegen |
 | `docs/DS-*.md` | Gedeeld | Lezen, schrijven na accordering |
+| `docs/reviews/CR-*.md` | Gedeeld | Eigen sectie toevoegen; oplosser vult afdoeningskolommen in |
+| `docs/reviews/DR-*.md` | Gedeeld | Eigen sectie toevoegen; oplosser vult afdoeningskolommen in |
 | `src/**` | Codex | Lezen, reviewopmerkingen plaatsen |
 | `tests/**` | Codex | Lezen, acceptatiecriteria toevoegen |
 | `agents.md` | Gedeeld | Beide mogen wijzigingen voorstellen; gebruiker keurt goed |
@@ -91,6 +93,16 @@ Beide agents houden zich aan de volgende conventies, zodat elkaars code leesbaar
 - **Alle invoerpaden** zijn configureerbaar (geen hardcoded paths)
 - **Eenheden** worden altijd expliciet benoemd in variabelenamen: `energy_kwh`, `power_kw`, `price_eur_per_kwh`
 
+### 5.1 Afspraak over encoding en mojibake
+
+Om terugkerende discussie over schijnbare encodingfouten te voorkomen geldt:
+
+- **De bron van waarheid is het bestand in de repository**, geopend als UTF-8 in editor of via een tool die UTF-8 correct leest.
+- **Terminal- of consoleweergave is niet leidend**. Mojibake in PowerShell, `Get-Content`, logging of shell-output is **geen reviewbevinding op zich**.
+- Een encodingprobleem wordt pas als echte bevinding genoteerd als **het bestand zelf** onjuiste bytes of onbedoelde tekens bevat wanneer het als UTF-8 wordt gelezen.
+- Bij twijfel controleert de reviewing agent het bestand met een UTF-8-geschikte lezer voordat een `REVIEW`- of `ISSUE`-punt over encoding wordt geplaatst.
+- Als het bestand correct UTF-8 is maar een tool toont onjuiste tekens, dan wordt dat hoogstens genoteerd als **tooling-/consolebeperking**, niet als document- of codefout.
+
 ---
 
 ## 6. Wat agents nooit mogen doen
@@ -104,7 +116,45 @@ Beide agents houden zich aan de volgende conventies, zodat elkaars code leesbaar
 
 ---
 
-## 7. CHANGELOG.md
+## 7. Reviewdocumenten (`docs/reviews/`)
+
+Alle code- en documentreviews worden opgeslagen in `docs/reviews/` met een vaste naamgeving en structuur.
+
+### 7.1 Naamgeving
+
+| Prefix | Betekenis | Voorbeeld |
+|---|---|---|
+| `CR-NNN` | Code Review — één bronbestand of module | `CR-001 data_manager.md` |
+| `DR-NNN` | Document Review — één of meer specificatiedocumenten | `DR-001 documentatie URS FD DS TP.md` |
+
+### 7.2 Documentstructuur
+
+Elk reviewdocument heeft:
+
+1. **Koptabel met metadata** — document-ID, betrokken bestanden, datum, status.
+2. **Bevindingen — overzichtstabel** — alle bevindingen van alle reviewers in één tabel:
+
+   | ID | Agent | Prioriteit | Samenvatting | Oplosser | Hoe opgelost | Status |
+   |---|---|---|---|---|---|---|
+   | CR-001-01 | Claude | Kritiek | korte omschrijving | — | — | Open |
+
+   - **ID:** `CR-NNN-NN` of `DR-NNN-NN` — uniek per bevinding.
+   - **Oplosser:** de agent of persoon die de bevinding afhandelt (invullen bij afdoening).
+   - **Hoe opgelost:** korte beschrijving van de toegepaste fix of onderbouwing voor "Niet van toepassing".
+   - **Status:** `Open` | `Opgelost` | `Niet van toepassing` | `Uitgesteld`
+
+3. **Reviewsecties per agent** — elke reviewer heeft een eigen `## Review: [Agent] — [datum]` sectie met gedetailleerde bevindingen gelinkt aan de ID's uit de overzichtstabel.
+
+### 7.3 Werkwijze afdoening
+
+- De **oplosser** (meestal Codex voor code, Claude voor docs) werkt de overzichtstabel bij zodra een bevinding is verwerkt.
+- Een bevinding mag alleen `Opgelost` worden als de fix aantoonbaar aanwezig is in de code of het document.
+- `Niet van toepassing` vereist een korte onderbouwing in de kolom "Hoe opgelost".
+- Na afdoening van alle open bevindingen wordt de documentstatus van `Open` naar `Afgerond` gezet.
+
+---
+
+## 8. CHANGELOG.md
 
 Elke agent voegt **direct na elke stap** een regel toe aan `CHANGELOG.md` — niet pas aan het eind van een sessie. Geen uitzondering.
 
@@ -126,7 +176,7 @@ Een agent die vergeet de CHANGELOG bij te houden heeft zijn handoff-procedure ni
 
 ---
 
-## 8. Conflictresolutie
+## 9. Conflictresolutie
 
 Als agents het oneens zijn over een ontwerpkeuze of implementatie:
 1. De afwijkende agent plaatst een `REVIEW`-tag met zijn bezwaar en onderbouwing.
@@ -137,7 +187,7 @@ Geen agent overschrijft de ander zonder dat de gebruiker heeft beslist.
 
 ---
 
-## 9. Sessieopstart-checklist
+## 10. Sessieopstart-checklist
 
 Elke agent voert bij de start van een nieuwe werksessie het volgende uit:
 

@@ -118,18 +118,16 @@ De gebruiker moet per simulatierun de volgende batterijparameters kunnen opgeven
 - Aanschafprijs (€) inclusief installatie
 
 **UR-04 — Bedrijfsmodus**  
-De gebruiker moet per batterijconfiguratie kiezen uit de volgende drie bedrijfsmodi:
+De gebruiker moet per batterijconfiguratie kiezen uit de volgende twee bedrijfsmodi:
 - **Modus 1 — Zelfconsumptie / nul-op-de-meter:** batterij laadt uitsluitend op zonne-overschot en ontlaadt uitsluitend bij huishoudvraag; geen netladen, geen batterij-export naar het net.
-- **Modus 2 — Slim laden zonder teruglevering:** batterij laadt op zonne-overschot én op het net als een economische laadconditie dit rechtvaardigt (look-ahead binnen de kalenderdag); ontlaadt uitsluitend bij huishoudvraag; geen batterij-export.
-- **Modus 3 — Slim laden met teruglevering:** batterij laadt op zonne-overschot én op het net bij lage spotprijs; ontlaadt bij huishoudvraag én exporteert naar het net bij hoge spotprijs (volledige day-ahead arbitrage).
+- **Slimme modus — Slim laden voor eigen verbruik:** batterij laadt op zonne-overschot en optioneel op het net als een economische laadconditie dit rechtvaardigt; ontlaadt uitsluitend bij huishoudvraag; geen batterij-export.
 
-Voor Modus 3 moet de gebruiker de laad-/exportbeslisregel kunnen kiezen en parametriseren:
-- **Drempelwaarde:** laad als `spotprijs < drempel_laag` (€/kWh), exporteer als `spotprijs > drempel_hoog` (€/kWh); vereist `drempel_laag < drempel_hoog`.
-- **Percentiel:** laad als spotprijs < P-laag percentiel van de dag; exporteer als spotprijs > P-hoog percentiel (configureerbaar, standaard P25/P75); vereist P-laag < P-hoog.
+Voor de slimme modus geldt:
+- vóór 13:00 mag de look-ahead alleen gebruikmaken van prijzen voor de resterende intervallen van dezelfde kalenderdag;
+- vanaf 13:00 mag de look-ahead gebruikmaken van de komende 24 uur aan day-ahead prijzen;
+- netladen is alleen toegestaan als de verwachte vermeden inkoopprijs voldoende hoger ligt dan de huidige inkoopprijs, uitgedrukt als configureerbare minimale prijsstijging in procenten.
 
-Aanvullend voor Modus 2 en 3: een configureerbare minimale marge (€/kWh, standaard 0,00) garandeert dat netladen pas plaatsvindt als het verwachte financiële voordeel de round-trip verliezen overtreft.
-
-De gekozen modus, beslisregel en parameterwaarden worden meegenomen in de simulatie-output zodat resultaten reproduceerbaar zijn (UR-18).
+De gekozen modus en parameterwaarden worden meegenomen in de simulatie-output zodat resultaten reproduceerbaar zijn (UR-18).
 
 ---
 
@@ -240,7 +238,7 @@ De tool biedt analyse-uitvoer die de gebruiker helpt simulatieresultaten te inte
 - Alle analyse-uitvoer is exporteerbaar (UR-12).
 
 **UR-20 — Capaciteitsoptimalisatie**  
-De tool moet de gebruiker ondersteunen bij het bepalen van de optimale batterijgrootte door een geautomatiseerde sweep uit te voeren over een configureerbaar capaciteitsbereik (minimale capaciteit, maximale capaciteit, stapgrootte in kWh; maximaal 200 punten). Voor elk capaciteitspunt worden alle financiële KPI's (UR-09) en technische KPI's (UR-10) berekend. De tool berekent tevens de marginale meeropbrengst per extra kWh capaciteit en markeert de optimale capaciteit op basis van een door de gebruiker gekozen criterium (hoogste NCW, kortste terugverdientijd, hoogste jaarlijkse besparing, of marginale drempel). Laad- en ontlaadvermogen kunnen meeschalen via een configureerbare C-rate of als vaste waarde worden opgegeven. De aanschafprijs wordt berekend via een lineair kostenmodel (`basisprijs + prijs_per_kwh × capaciteit`) of handmatig per capaciteitspunt ingevoerd. De sweepresultaten zijn exporteerbaar via UR-12.
+De tool moet de gebruiker ondersteunen bij het bepalen van de optimale batterijgrootte door een geautomatiseerde sweep uit te voeren over een configureerbaar capaciteitsbereik (minimale capaciteit, maximale capaciteit, stapgrootte in kWh; maximaal 200 punten). Voor elk capaciteitspunt worden alle financiële KPI's (UR-09) en technische KPI's (UR-10) berekend. De tool markeert de optimale capaciteit op basis van een door de gebruiker gekozen criterium (hoogste NCW, kortste terugverdientijd of hoogste jaarlijkse besparing) en toont daarnaast de jaarlijkse besparing per kWh batterijcapaciteit. Laad- en ontlaadvermogen kunnen meeschalen via een configureerbare C-rate of als vaste waarde worden opgegeven. De aanschafprijs wordt berekend via een lineair kostenmodel (`basisprijs + prijs_per_kwh × capaciteit`) of handmatig per capaciteitspunt ingevoerd. De sweepresultaten zijn exporteerbaar via UR-12.
 
 ---
 
