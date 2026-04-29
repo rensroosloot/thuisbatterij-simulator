@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import Iterable
 
 import pandas as pd
+from pypdf import PdfReader
 
 
 P1E_REQUIRED_COLUMNS = (
@@ -30,6 +32,11 @@ RESOURCE_FILES = {
         "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2025.csv",
         "solar": "history HA 2025.csv",
     },
+    2026: {
+        "p1e": "P1e-2026-1-1-2026-4-27.csv",
+        "prices": "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2026.csv",
+        "solar": "history HA 2026.csv",
+    },
 }
 RESOURCE_LABELS = {
     "p1e": "P1e",
@@ -37,6 +44,36 @@ RESOURCE_LABELS = {
     "solar": "Home Assistant",
 }
 DATA_QUALITY_FLAG_DTYPE = pd.CategoricalDtype(categories=("",))
+FRANK_TERM_INVOICE_PATTERN = "Frank termijn *.pdf"
+FRANK_MONTH_ORDER = {
+    "januari": 1,
+    "februari": 2,
+    "maart": 3,
+    "april": 4,
+    "mei": 5,
+    "juni": 6,
+    "juli": 7,
+    "augustus": 8,
+    "september": 9,
+    "oktober": 10,
+    "november": 11,
+    "december": 12,
+}
+FRANK_MONTH_ABBREVIATIONS = {
+    "januari": "jan",
+    "februari": "feb",
+    "maart": "mrt",
+    "april": "apr",
+    "mei": "mei",
+    "juni": "jun",
+    "juli": "jul",
+    "augustus": "aug",
+    "september": "sep",
+    "oktober": "okt",
+    "november": "nov",
+    "december": "dec",
+}
+FRANK_INVOICE_SECTIONS = ("Gas", "Stroom", "Teruglevering")
 
 
 @dataclass(frozen=True)
@@ -127,6 +164,18 @@ class GoldenDataFrameSummary:
     issue_codes: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class FrankTermInvoiceSummary:
+    """Parsed monthly Frank term invoice for sanity checks."""
+
+    path: Path
+    month_name_nl: str
+    month_number: int
+    invoice_total_eur: float
+    expected_electricity_component_eur: float
+    expected_gas_component_eur: float
+
+
 class DataManager:
     """Prepare historical input data for simulation."""
 
@@ -180,7 +229,7 @@ class DataManager:
 
     def summarize_available_golden_dataframes(self) -> list[GoldenDataFrameSummary]:
         summaries: list[GoldenDataFrameSummary] = []
-        for year in (2024, 2025):
+        for year in RESOURCE_FILES:
             paths = self.get_year_resource_paths(year)
             if all(path.exists() for path in paths.values()):
                 result = self.build_golden_dataframe(
@@ -198,6 +247,17 @@ class DataManager:
             key: self.resources_path / filename
             for key, filename in RESOURCE_FILES[year].items()
         }
+
+    def summarize_frank_term_invoices(self) -> list[FrankTermInvoiceSummary]:
+        summaries = []
+        for path in sorted(self.resources_path.glob(FRANK_TERM_INVOICE_PATTERN)):
+            summaries.append(self.summarize_frank_term_invoice(path))
+        return sorted(summaries, key=lambda summary: summary.month_number)
+
+    def summarize_frank_term_invoice(self, path: str | Path) -> FrankTermInvoiceSummary:
+        reader = PdfReader(str(path))
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        return self._parse_frank_term_invoice_text(Path(path), text)
 
     def summarize_golden_dataframe(
         self,
@@ -229,6 +289,158 @@ class DataManager:
             issue_count=len(result.report.issues),
             issue_codes=issue_codes,
         )
+
+    def _parse_frank_term_invoice_text(
+        self,
+        path: Path,
+        text: str,
+    ) -> FrankTermInvoiceSummary:
+        month_match = re.search(r"Termijnfactuur\s+([A-Za-zÀ-ÿ]+)", text, flags=re.IGNORECASE)
+        if month_match is None:
+            raise ValueError(f"Could not parse invoice month from {path.name}.")
+        month_name_nl = month_match.group(1).strip().lower()
+        if month_name_nl not in FRANK_MONTH_ORDER:
+            raise ValueError(f"Unsupported Dutch invoice month '{month_name_nl}' in {path.name}.")
+
+        invoice_totals = re.findall(
+            r"Notabedrag\s*(?:Incl\.\s*[\d,]+\s*BTW\s*)?[€â‚¬]\s*([\d\.,]+)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if not invoice_totals:
+            raise ValueError(f"Could not parse invoice total from {path.name}.")
+
+        fixed_electricity_component_eur = self._parse_fixed_electricity_component(text)
+        expected_gas_component_eur = self._parse_expected_component_amount(
+            text,
+            component_label="Verwachte kosten",
+            month_name_nl=month_name_nl,
+            section_label="Gas",
+        )
+        expected_stroom_cost_eur = self._parse_expected_component_amount(
+            text,
+            component_label="Verwachte kosten",
+            month_name_nl=month_name_nl,
+            section_label="Stroom",
+        )
+        expected_teruglevering_eur = self._parse_expected_component_amount(
+            text,
+            component_label="Verwachte opbrengst",
+            month_name_nl=month_name_nl,
+            section_label="Teruglevering",
+        )
+
+        return FrankTermInvoiceSummary(
+            path=path,
+            month_name_nl=month_name_nl,
+            month_number=FRANK_MONTH_ORDER[month_name_nl],
+            invoice_total_eur=self._parse_euro_number(invoice_totals[0]),
+            expected_electricity_component_eur=(
+                fixed_electricity_component_eur
+                + expected_stroom_cost_eur
+                + expected_teruglevering_eur
+            ),
+            expected_gas_component_eur=expected_gas_component_eur,
+        )
+
+    def _parse_fixed_electricity_component(self, text: str) -> float:
+        labels = (
+            "Vaste leveringskosten",
+            "Energiebelasting & ODE",
+            "Vermindering energiebelasting",
+            "Netbeheerkosten",
+        )
+        total_eur = 0.0
+        for label in labels:
+            row_snippet = self._extract_row_block(
+                text,
+                row_label=label,
+                next_markers=(
+                    "Vaste leveringskosten",
+                    "Energiebelasting & ODE",
+                    "Vermindering energiebelasting",
+                    "Netbeheerkosten",
+                    "Het dynamische deel",
+                    "Gas",
+                ),
+            )
+            amounts = re.findall(r"€\s*([-\d\.,]+)", row_snippet, flags=re.IGNORECASE)
+            if len(amounts) < 2:
+                raise ValueError(f"Could not parse fixed cost row '{label}' from invoice text.")
+            total_eur += self._parse_euro_number(amounts[-1])
+        return total_eur
+
+    @staticmethod
+    def _parse_expected_component_amount(
+        text: str,
+        component_label: str,
+        month_name_nl: str,
+        section_label: str | None = None,
+    ) -> float:
+        month_abbreviation = FRANK_MONTH_ABBREVIATIONS[month_name_nl]
+        if section_label is not None:
+            section_text = DataManager._extract_invoice_section(text, section_label)
+        else:
+            section_text = text
+        row_label = f"{component_label} {month_abbreviation}"
+        row_snippet = DataManager._extract_row_block(
+            section_text,
+            row_label=row_label,
+            next_markers=(
+                "Verwachte kosten",
+                "Werkelijke kosten",
+                "Betaald voor",
+                "Verwachte opbrengst",
+                "Werkelijke opbrengst",
+                "Het verschuldigde bedrag",
+                "Leveringsadres:",
+                "Notabedrag",
+                "Gas",
+                "Stroom",
+                "Teruglevering",
+            ),
+        )
+        amounts = re.findall(r"€\s*([-\d\.,]+)", row_snippet, flags=re.IGNORECASE)
+        if not amounts:
+            raise ValueError(
+                f"Could not parse '{component_label} {month_name_nl}' amount from invoice text."
+            )
+        return DataManager._parse_euro_number(amounts[-1])
+
+    @staticmethod
+    def _extract_invoice_section(text: str, section_label: str) -> str:
+        section_start = text.find(section_label)
+        if section_start == -1:
+            raise ValueError(f"Could not find invoice section '{section_label}'.")
+        section_end = len(text)
+        for next_label in FRANK_INVOICE_SECTIONS:
+            if next_label == section_label:
+                continue
+            next_index = text.find(next_label, section_start + len(section_label))
+            if next_index != -1:
+                section_end = min(section_end, next_index)
+        return text[section_start:section_end]
+
+    @staticmethod
+    def _extract_row_block(text: str, row_label: str, next_markers: Iterable[str]) -> str:
+        row_start = text.lower().find(row_label.lower())
+        if row_start == -1:
+            raise ValueError(f"Could not find invoice row '{row_label}'.")
+
+        row_end = len(text)
+        search_from = row_start + len(row_label)
+        for marker in next_markers:
+            if marker.lower() == row_label.lower():
+                continue
+            marker_index = text.lower().find(marker.lower(), search_from)
+            if marker_index != -1:
+                row_end = min(row_end, marker_index)
+        return text[row_start:row_end]
+
+    @staticmethod
+    def _parse_euro_number(value: str) -> float:
+        normalized = value.replace(".", "").replace(",", ".")
+        return float(normalized)
 
     def load_price_csv(self, path: str | Path) -> pd.DataFrame:
         dataframe = pd.read_csv(path, sep=";", decimal=",")

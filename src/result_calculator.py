@@ -55,6 +55,9 @@ class ResultSummary:
     max_soc_pct: float
     self_sufficiency_pct: float
     self_consumption_pct: float
+    direct_solar_self_consumption_without_battery_kwh: float
+    total_solar_self_consumption_with_battery_kwh: float
+    extra_solar_self_consumption_by_battery_kwh: float
     capacity_loss_kwh: float
 
 
@@ -112,6 +115,19 @@ class ResultCalculator:
         total_demand_kwh = self._get_total_demand_kwh(dataframe)
         total_solar_kwh = float(dataframe["solar_kwh"].sum()) if "solar_kwh" in dataframe else 0.0
         direct_solar_to_home_kwh = self._calculate_direct_solar_to_home(dataframe)
+        direct_solar_self_consumption_without_battery_kwh = max(
+            total_solar_kwh - float(dataframe["export_zonder_batterij_kwh"].sum()),
+            0.0,
+        )
+        total_solar_self_consumption_with_battery_kwh = max(
+            total_solar_kwh - float(dataframe["export_met_batterij_kwh"].sum()),
+            0.0,
+        )
+        extra_solar_self_consumption_by_battery_kwh = max(
+            total_solar_self_consumption_with_battery_kwh
+            - direct_solar_self_consumption_without_battery_kwh,
+            0.0,
+        )
         self_sufficiency_pct = self._percentage(
             direct_solar_to_home_kwh + float(dataframe["ontlaad_naar_huis_kwh"].sum()),
             total_demand_kwh,
@@ -144,6 +160,15 @@ class ResultCalculator:
             max_soc_pct=float(dataframe["soc_pct"].max()) if not dataframe.empty else 0.0,
             self_sufficiency_pct=min(self_sufficiency_pct, 100.0),
             self_consumption_pct=min(self_consumption_pct, 100.0),
+            direct_solar_self_consumption_without_battery_kwh=(
+                direct_solar_self_consumption_without_battery_kwh
+            ),
+            total_solar_self_consumption_with_battery_kwh=(
+                total_solar_self_consumption_with_battery_kwh
+            ),
+            extra_solar_self_consumption_by_battery_kwh=(
+                extra_solar_self_consumption_by_battery_kwh
+            ),
             capacity_loss_kwh=capacity_loss_kwh,
         )
 

@@ -93,3 +93,18 @@
 2026-04-27 | codex   | impl   | Slimme modus losgetrokken van oude exportmodus; UI en sweep rekenen nu met een aparte niet-exporterende simulate_smart_mode
 2026-04-27 | codex   | impl   | Slimme modus sterk versneld: publicatie-afhankelijke prijslookahead gevectoriseerd, simulatietijd van ~32s naar ~0.6s per jaar
 2026-04-27 | codex   | docs   | URS, FD, DS en TP bijgewerkt naar twee modi, geen batterij-export, 13:00-prijspublicatie en actuele slimme-modus tests
+2026-04-28 | codex   | impl   | Sweep C-rate defaults aangepast naar voorbeeldbatterij: laden 2.4/5.4 en ontladen 0.8/5.4, met fijnere stapgrootte
+2026-04-28 | codex   | impl   | Sweep prijsmodel default gewijzigd naar vaste Zendure-marktopties met vooraf ingevulde capaciteit/prijs-regels
+2026-04-28 | codex   | impl   | Sweep vaste marktopties bijgewerkt naar drie nieuwe batterijopties: 2.4, 5.28 en 8.16 kWh met actuele prijzen
+2026-04-28 | claude  | review | CR-002 aangemaakt: code review main.py; 2 open bevindingen (sweep vast vermogen, dode variabele/caption)
+2026-04-29 | claude  | design | UID-001 v1.0 aangemaakt: UI-ontwerp met tabs/sidebar/KPI-kaarten/donker thema als implementatiespec voor Codex
+2026-04-29 | claude  | design | UID-001 v1.1: 9 Codex-reviewbevindingen verwerkt (sweep-modus expliciet, §1 aangescherpt, SweepConfig-conflict, gedeelde periodeselctor, kleurpalet, variabelenaam)
+2026-04-29 | claude  | design | UID-001 v1.2: UID-001-10/11 verwerkt — KPI-bronlogica conditioneel; KPI-layout verticaal gestapeld
+2026-04-28 | codex   | impl   | Verouderd UI-veld voor Modus 2 minimale marge verwijderd; alleen slimme modus minimale prijsstijging blijft zichtbaar
+2026-04-28 | codex   | impl   | Zonne-zelfconsumptie uitgesplitst naar direct zonder batterij, totaal met batterij en extra door batterij in KPI's en UI
+2026-04-28 | codex   | docs   | TR-001 testrapport toegevoegd met uitgevoerde tests, bevindingen, performance en huidige projectconclusies
+2026-04-28 | codex   | docs   | TR-001 uitgebreid met concrete simulatieresultaten en conclusies voor 2024, 2025 en de drie marktopties
+2026-04-28 | codex   | impl   | 2026 deelscenario toegevoegd met label t/m 27 april; Frank termijn-PDF's parsebaar gemaakt voor sanity check tegen gesimuleerde elektriciteits-baseline
+2026-04-29 | codex   | review | UID-001 nagekeken en reviewbevindingen toegevoegd over sweep-configuratie, widgetconsistentie, detailperiode en encoding-opschoning
+2026-04-29 | codex   | setup  | agents.md uitgebreid met expliciete afspraak: UTF-8-bestand is leidend, console-mojibake is geen reviewbevinding
+2026-04-29 | codex   | review | UID-001 opnieuw nagekeken; twee open bevindingen toegevoegd over KPI-bron bij single-year scenario's en te dichte KPI-layout

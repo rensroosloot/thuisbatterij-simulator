@@ -10,7 +10,13 @@ from capacity_sweep import CapacitySweepRunner, SweepConfig
 from data_manager import DataManager
 from exporter import Exporter
 from result_calculator import ResultCalculator, ResultConfig
-from scenario_runner import SCENARIO_OPTIONS, combine_yearly_frames, resolve_scenario_years
+from scenario_runner import (
+    SCENARIO_OPTIONS,
+    combine_yearly_frames,
+    format_scenario_label,
+    get_year_display_label,
+    resolve_scenario_years,
+)
 from sim_engine import BatteryConfig, ModeConfig, SimEngine
 from tariff_engine import TariffConfig, TariffEngine
 
@@ -301,6 +307,18 @@ def build_mode_row(
         "ncw_eur": round(net_present_value_eur, 2),
         "zelfvoorzienendheid_pct": round(result_summary.self_sufficiency_pct, 1),
         "zelfconsumptie_pct": round(result_summary.self_consumption_pct, 1),
+        "directe_zon_zelfconsumptie_zonder_batterij_kwh": round(
+            result_summary.direct_solar_self_consumption_without_battery_kwh * annual_factor,
+            3,
+        ),
+        "totale_zon_zelfconsumptie_met_batterij_kwh": round(
+            result_summary.total_solar_self_consumption_with_battery_kwh * annual_factor,
+            3,
+        ),
+        "extra_zon_zelfconsumptie_door_batterij_kwh": round(
+            result_summary.extra_solar_self_consumption_by_battery_kwh * annual_factor,
+            3,
+        ),
         "cycli_jaar": round(result_summary.equivalent_full_cycles * annual_factor, 2),
         "import_zonder_batterij_kwh": round(
             float(simulated["import_zonder_batterij_kwh"].sum()) * annual_factor,
@@ -334,6 +352,117 @@ def build_mode_row(
         "verlies_kwh": round(float(simulated["round_trip_loss_kwh"].sum()) * annual_factor, 3),
         "eind_soc_kwh": round(float(simulated["soc_kwh"].iloc[-1]), 3) if not simulated.empty else 0.0,
     }
+
+
+def render_solar_self_consumption_summary(dataframe: pd.DataFrame, title: str) -> None:
+    required = {"solar_kwh", "export_zonder_batterij_kwh", "export_met_batterij_kwh"}
+    if dataframe.empty or not required.issubset(dataframe.columns):
+        return
+
+    total_solar_kwh = float(dataframe["solar_kwh"].sum())
+    direct_without_battery_kwh = max(
+        total_solar_kwh - float(dataframe["export_zonder_batterij_kwh"].sum()),
+        0.0,
+    )
+    total_with_battery_kwh = max(
+        total_solar_kwh - float(dataframe["export_met_batterij_kwh"].sum()),
+        0.0,
+    )
+    extra_by_battery_kwh = max(total_with_battery_kwh - direct_without_battery_kwh, 0.0)
+
+    st.caption(title)
+    metric_columns = st.columns(3)
+    metric_columns[0].metric(
+        "Direct zonder batterij",
+        f"{direct_without_battery_kwh:.1f} kWh",
+    )
+    metric_columns[1].metric(
+        "Totaal met batterij",
+        f"{total_with_battery_kwh:.1f} kWh",
+    )
+    metric_columns[2].metric(
+        "Extra door batterij",
+        f"{extra_by_battery_kwh:.1f} kWh",
+    )
+
+
+def build_monthly_baseline_cost_table(
+    dataframe: pd.DataFrame,
+    tariff_engine: TariffEngine,
+) -> pd.DataFrame:
+    if dataframe.empty:
+        return pd.DataFrame()
+
+    costed = tariff_engine.apply_baseline_costs(dataframe)
+    monthly = costed.resample("MS").agg({"kosten_zonder_batterij_eur": "sum"})
+    monthly["covered_days"] = costed.groupby(costed.index.to_period("M")).apply(
+        lambda frame: frame.index.normalize().nunique()
+    ).to_numpy()
+    monthly["days_in_month"] = monthly.index.days_in_month
+    monthly["coverage_ratio"] = monthly["covered_days"] / monthly["days_in_month"]
+    monthly["vaste_kosten_eur_prorata"] = (
+        tariff_engine.config.fixed_costs_eur_per_month * monthly["coverage_ratio"]
+    )
+    monthly["baseline_totaal_eur_prorata"] = (
+        monthly["kosten_zonder_batterij_eur"] + monthly["vaste_kosten_eur_prorata"]
+    )
+    monthly["month_number"] = monthly.index.month
+    return monthly.reset_index(drop=True)
+
+
+def render_frank_term_sanity_check(data_manager: DataManager, tariff_engine: TariffEngine) -> None:
+    paths = data_manager.get_year_resource_paths(2026)
+    if not all(path.exists() for path in paths.values()):
+        return
+
+    frank_summaries = data_manager.summarize_frank_term_invoices()
+    if not frank_summaries:
+        return
+
+    golden_2026 = load_golden_dataframe(2026)
+    monthly_baseline = build_monthly_baseline_cost_table(golden_2026, tariff_engine)
+    if monthly_baseline.empty:
+        return
+
+    invoice_by_month = {summary.month_number: summary for summary in frank_summaries}
+    frank_rows = []
+    for _, monthly_row in monthly_baseline.iterrows():
+        invoice_summary = invoice_by_month.get(int(monthly_row["month_number"]))
+        if invoice_summary is None:
+            continue
+        expected_prorata = (
+            invoice_summary.expected_electricity_component_eur * monthly_row["coverage_ratio"]
+        )
+        frank_rows.append(
+            {
+                "maand": invoice_summary.month_name_nl,
+                "dekking_dagen": int(monthly_row["covered_days"]),
+                "dagen_in_maand": int(monthly_row["days_in_month"]),
+                "dekkingsratio": round(float(monthly_row["coverage_ratio"]), 3),
+                "frank_verwachte_stroomtermijn_eur_prorata": round(expected_prorata, 2),
+                "simulatie_baseline_eur_prorata": round(
+                    float(monthly_row["baseline_totaal_eur_prorata"]),
+                    2,
+                ),
+                "verschil_eur": round(
+                    float(monthly_row["baseline_totaal_eur_prorata"]) - expected_prorata,
+                    2,
+                ),
+                "frank_notabedrag_totaal_eur": round(invoice_summary.invoice_total_eur, 2),
+                "frank_gas_component_eur": round(invoice_summary.expected_gas_component_eur, 2),
+            }
+        )
+
+    if not frank_rows:
+        return
+
+    st.subheader("Frank termijn sanity check 2026")
+    st.caption(
+        "De Frank termijn-PDF's worden hier alleen als referentie gebruikt. "
+        "De vergelijking gebruikt de verwachte stroomcomponent uit de termijnfactuur; "
+        "gas en eventuele correcties blijven apart zichtbaar."
+    )
+    st.dataframe(frank_rows, use_container_width=True, hide_index=True)
 
 
 def main() -> None:
@@ -468,14 +597,10 @@ def main() -> None:
             step=0.01,
             disabled=not use_fixed_sell_price,
         )
-        detail_year = st.selectbox("Detailgrafiek jaar", options=scenario_years)
-        mode_2_min_margin_eur_per_kwh = st.number_input(
-            "Minimale marge modus 2 netladen (EUR/kWh)",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.10,
-            step=0.01,
-            help="Alleen voor Modus 2. Extra veiligheidsmarge boven op rendementsverlies.",
+        detail_year = st.selectbox(
+            "Detailgrafiek jaar",
+            options=scenario_years,
+            format_func=get_year_display_label,
         )
         mode_3_min_price_spread_pct = st.number_input(
             "Slimme modus minimale prijsstijging (%)",
@@ -491,12 +616,18 @@ def main() -> None:
         sweep_capacity_min_kwh = 1.0
         sweep_capacity_max_kwh = 15.0
         sweep_capacity_step_kwh = 1.0
-        sweep_charge_c_rate = 0.5
-        sweep_discharge_c_rate = 0.5
+        sweep_charge_c_rate = 2.4 / 5.4
+        sweep_discharge_c_rate = 0.8 / 5.4
         sweep_purchase_base_eur = 0.0
         sweep_purchase_eur_per_kwh = 1000.0
-        sweep_price_model = "Lineair prijsmodel"
-        sweep_market_options_text = ""
+        sweep_price_model = "Vaste marktopties"
+        sweep_market_options_text = "\n".join(
+            (
+                "2.4;1118.99",
+                "5.28;1847.99",
+                "8.16;2576.99",
+            )
+        )
         sweep_criterion_label = "Hoogste NCW"
         if sweep_enabled:
             sweep_mode = st.selectbox(
@@ -529,19 +660,20 @@ def main() -> None:
                 "Sweep laad C-rate",
                 min_value=0.1,
                 max_value=5.0,
-                value=0.5,
-                step=0.1,
+                value=2.4 / 5.4,
+                step=0.01,
             )
             sweep_discharge_c_rate = st.number_input(
                 "Sweep ontlaad C-rate",
                 min_value=0.1,
                 max_value=5.0,
-                value=0.5,
-                step=0.1,
+                value=0.8 / 5.4,
+                step=0.01,
             )
             sweep_price_model = st.selectbox(
                 "Sweep prijsmodel",
                 options=("Lineair prijsmodel", "Vaste marktopties"),
+                index=1,
             )
             if sweep_price_model == "Lineair prijsmodel":
                 sweep_purchase_base_eur = st.number_input(
@@ -561,14 +693,7 @@ def main() -> None:
             else:
                 sweep_market_options_text = st.text_area(
                     "Marktopties capaciteit;prijs",
-                    value="\n".join(
-                        (
-                            "2.4;1339",
-                            "5.76;1938",
-                            "8.64;2667",
-                            "11.52;4255",
-                        )
-                    ),
+                    value=sweep_market_options_text,
                     help="Een optie per regel, bijvoorbeeld '5.76;1938'. Alleen deze echte productopties worden dan doorgerekend.",
                 )
             sweep_criterion_label = st.selectbox(
@@ -602,7 +727,7 @@ def main() -> None:
             baseline_summaries[year] = cost_summary
             cost_rows.append(
                 {
-                    "scenario": str(year),
+                    "scenario": get_year_display_label(year),
                     "importkosten_eur": round(cost_summary.import_costs_eur, 2),
                     "exportopbrengst_eur": round(cost_summary.export_revenue_eur, 2),
                     "intervalkosten_eur": round(cost_summary.interval_costs_eur, 2),
@@ -615,7 +740,7 @@ def main() -> None:
             year_count = len(baseline_summaries)
             cost_rows.append(
                 {
-                    "scenario": scenario_choice,
+                    "scenario": format_scenario_label(scenario_choice),
                     "importkosten_eur": round(
                         sum(summary.import_costs_eur for summary in baseline_summaries.values())
                         / year_count,
@@ -647,6 +772,8 @@ def main() -> None:
                 }
             )
     st.dataframe(cost_rows, use_container_width=True, hide_index=True)
+    if 2026 in scenario_years:
+        render_frank_term_sanity_check(data_manager, tariff_engine)
 
     battery_config = BatteryConfig(
         capacity_kwh=battery_capacity_kwh,
@@ -686,7 +813,7 @@ def main() -> None:
             result_summary = result_calculator.calculate(costed, result_config)
             mode_1_rows.append(
                 build_mode_row(
-                    str(year),
+                    get_year_display_label(year),
                     simulated,
                     result_summary,
                     baseline_costs,
@@ -699,7 +826,7 @@ def main() -> None:
             combined_result = result_calculator.calculate(combined, result_config)
             mode_1_rows.append(
                 build_mode_row(
-                    scenario_choice,
+                    format_scenario_label(scenario_choice),
                     combined,
                     combined_result,
                     tariff_engine.summarize_baseline_costs(combined),
@@ -734,7 +861,7 @@ def main() -> None:
             result_summary = result_calculator.calculate(costed, result_config)
             smart_rows.append(
                 build_mode_row(
-                    str(year),
+                    get_year_display_label(year),
                     simulated,
                     result_summary,
                     baseline_costs,
@@ -747,7 +874,7 @@ def main() -> None:
             combined_result = result_calculator.calculate(combined, result_config)
             smart_rows.append(
                 build_mode_row(
-                    scenario_choice,
+                    format_scenario_label(scenario_choice),
                     combined,
                     combined_result,
                     tariff_engine.summarize_baseline_costs(combined),
@@ -789,6 +916,7 @@ def main() -> None:
     render_net_exchange_chart(mode_1_detail, f"Modus 1 netuitwisseling {detail_year}")
     render_battery_flow_chart(mode_1_detail, f"Modus 1 batterij-opname en afgifte {detail_year}")
     render_soc_chart(mode_1_detail, f"Modus 1 batterijlading {detail_year}")
+    render_solar_self_consumption_summary(mode_1_detail, "Modus 1 zonne-zelfconsumptie")
     render_soc_summary(mode_1_detail, "Modus 1 batterijgebruik")
     render_soc_distribution_chart(mode_1_detail, f"Modus 1 SoC-verdeling {detail_year}")
     render_simulation_exports(exporter, mode_1_detail, f"modus_1_{detail_year}")
@@ -808,6 +936,7 @@ def main() -> None:
     render_net_exchange_chart(smart_detail, f"Slimme modus netuitwisseling {detail_year}")
     render_battery_flow_chart(smart_detail, f"Slimme modus batterij-opname en afgifte {detail_year}")
     render_soc_chart(smart_detail, f"Slimme modus batterijlading {detail_year}")
+    render_solar_self_consumption_summary(smart_detail, "Slimme modus zonne-zelfconsumptie")
     render_soc_summary(smart_detail, "Slimme modus batterijgebruik")
     render_soc_distribution_chart(smart_detail, f"Slimme modus SoC-verdeling {detail_year}")
     render_simulation_exports(exporter, smart_detail, f"slimme_modus_{detail_year}")

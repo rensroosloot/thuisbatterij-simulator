@@ -88,6 +88,9 @@ def test_result_calculator_technical_kpis():
     assert result.max_soc_pct == pytest.approx(80.0)
     assert result.self_sufficiency_pct == pytest.approx(60.0)
     assert result.self_consumption_pct == pytest.approx(87.5)
+    assert result.direct_solar_self_consumption_without_battery_kwh == pytest.approx(2.0)
+    assert result.total_solar_self_consumption_with_battery_kwh == pytest.approx(3.5)
+    assert result.extra_solar_self_consumption_by_battery_kwh == pytest.approx(1.5)
     assert result.capacity_loss_kwh == pytest.approx(0.0004)
 
 

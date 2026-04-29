@@ -8,6 +8,7 @@ import pandas as pd
 SCENARIO_OPTIONS = (
     "2024",
     "2025",
+    "2026 t/m 27 april",
     "2024+2025 gecombineerd",
 )
 
@@ -17,9 +18,26 @@ def resolve_scenario_years(scenario: str) -> tuple[int, ...]:
         return (2024,)
     if scenario == "2025":
         return (2025,)
+    if scenario == "2026 t/m 27 april":
+        return (2026,)
     if scenario == "2024+2025 gecombineerd":
         return (2024, 2025)
     raise ValueError(f"Unsupported scenario selection: {scenario}")
+
+
+def get_year_display_label(year: int) -> str:
+    if year == 2026:
+        return "2026 t/m 27 april"
+    return str(year)
+
+
+def format_scenario_label(scenario: str) -> str:
+    if scenario == "2024+2025 gecombineerd":
+        return scenario
+    years = resolve_scenario_years(scenario)
+    if len(years) == 1:
+        return get_year_display_label(years[0])
+    return scenario
 
 
 def combine_yearly_frames(yearly_frames: dict[int, pd.DataFrame]) -> pd.DataFrame:

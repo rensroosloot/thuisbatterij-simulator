@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -416,3 +418,69 @@ def test_summarize_golden_dataframe_returns_joined_totals(tmp_path):
     assert summary.total_solar_kwh == pytest.approx(0.25)
     assert summary.total_demand_kwh == pytest.approx(0.45)
     assert summary.missing_price_count == 0
+
+
+def test_get_year_resource_paths_supports_partial_2026():
+    manager = DataManager()
+
+    result = manager.get_year_resource_paths(2026)
+
+    assert result["p1e"].name == "P1e-2026-1-1-2026-4-27.csv"
+    assert result["prices"].name == "jeroen_punt_nl_dynamische_stroomprijzen_jaar_2026.csv"
+    assert result["solar"].name == "history HA 2026.csv"
+
+
+def test_parse_frank_term_invoice_text_extracts_month_and_components():
+    text = """
+Termijnfactuur
+januari
+Vaste leveringskosten
+01-01 t/m 31-01
+€ 7,92
+€ 9,58
+Energiebelasting & ODE
+01-01 t/m 31-01
+€ 46,68
+€ 56,49
+Vermindering energiebelasting
+01-01 t/m 31-01
+€ -43,32
+€ -52,42
+Netbeheerkosten
+01-01 t/m 31-01
+€ 51,77
+€ 62,64
+Gas
+Verwachte kosten jan
+01-01 t/m 31-01
+157 m3
+€ 0,321
+€ 50,45
+€ 61,04
+Stroom
+Verwachte kosten jan
+01-01 t/m 31-01
+344 kWh
+€ 0,113
+€ 38,94
+€ 47,11
+Teruglevering
+Verwachte opbrengst jan
+01-01 t/m 31-01
+-31 kWh
+€ 0,113
+€ -3,52
+€ -4,26
+Notabedrag
+Incl. 31,26 BTW
+€ 180,18
+"""
+    manager = DataManager()
+
+    summary = manager._parse_frank_term_invoice_text(Path("frank.pdf"), text)
+
+    assert summary.month_name_nl == "januari"
+    assert summary.month_number == 1
+    assert summary.invoice_total_eur == pytest.approx(180.18)
+    assert summary.expected_gas_component_eur == pytest.approx(61.04)
+    assert summary.expected_electricity_component_eur == pytest.approx(119.14)

@@ -93,6 +93,16 @@ Beide agents houden zich aan de volgende conventies, zodat elkaars code leesbaar
 - **Alle invoerpaden** zijn configureerbaar (geen hardcoded paths)
 - **Eenheden** worden altijd expliciet benoemd in variabelenamen: `energy_kwh`, `power_kw`, `price_eur_per_kwh`
 
+### 5.1 Afspraak over encoding en mojibake
+
+Om terugkerende discussie over schijnbare encodingfouten te voorkomen geldt:
+
+- **De bron van waarheid is het bestand in de repository**, geopend als UTF-8 in editor of via een tool die UTF-8 correct leest.
+- **Terminal- of consoleweergave is niet leidend**. Mojibake in PowerShell, `Get-Content`, logging of shell-output is **geen reviewbevinding op zich**.
+- Een encodingprobleem wordt pas als echte bevinding genoteerd als **het bestand zelf** onjuiste bytes of onbedoelde tekens bevat wanneer het als UTF-8 wordt gelezen.
+- Bij twijfel controleert de reviewing agent het bestand met een UTF-8-geschikte lezer voordat een `REVIEW`- of `ISSUE`-punt over encoding wordt geplaatst.
+- Als het bestand correct UTF-8 is maar een tool toont onjuiste tekens, dan wordt dat hoogstens genoteerd als **tooling-/consolebeperking**, niet als document- of codefout.
+
 ---
 
 ## 6. Wat agents nooit mogen doen
