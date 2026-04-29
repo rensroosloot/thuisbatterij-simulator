@@ -848,12 +848,17 @@ class SimEngine:
         same_day_future = series.groupby(time_index.normalize(), group_keys=False).transform(
             lambda day_series: day_series.iloc[::-1].cummax().iloc[::-1].shift(-1)
         )
-        next_24h_future = SimEngine._calculate_future_window_max(series, horizon_intervals)
+        next_day_daily_max = series.groupby(time_index.normalize()).max().shift(-1)
+        next_day_daily_max_aligned = time_index.normalize().map(next_day_daily_max)
         after_publication_mask = (
             (time_index.hour > 13)
             | ((time_index.hour == 13) & (time_index.minute >= 0))
         )
-        return next_24h_future.where(after_publication_mask, same_day_future)
+        rest_of_today_plus_full_tomorrow = pd.concat(
+            [same_day_future, pd.Series(next_day_daily_max_aligned, index=series.index)],
+            axis=1,
+        ).max(axis=1, skipna=True)
+        return rest_of_today_plus_full_tomorrow.where(after_publication_mask, same_day_future)
 
     @staticmethod
     def _calculate_future_window_min(
@@ -879,12 +884,17 @@ class SimEngine:
         same_day_future = series.groupby(time_index.normalize(), group_keys=False).transform(
             lambda day_series: day_series.iloc[::-1].cummin().iloc[::-1].shift(-1)
         )
-        next_24h_future = SimEngine._calculate_future_window_min(series, horizon_intervals)
+        next_day_daily_min = series.groupby(time_index.normalize()).min().shift(-1)
+        next_day_daily_min_aligned = time_index.normalize().map(next_day_daily_min)
         after_publication_mask = (
             (time_index.hour > 13)
             | ((time_index.hour == 13) & (time_index.minute >= 0))
         )
-        return next_24h_future.where(after_publication_mask, same_day_future)
+        rest_of_today_plus_full_tomorrow = pd.concat(
+            [same_day_future, pd.Series(next_day_daily_min_aligned, index=series.index)],
+            axis=1,
+        ).min(axis=1, skipna=True)
+        return rest_of_today_plus_full_tomorrow.where(after_publication_mask, same_day_future)
 
     @staticmethod
     def _is_high_export_price(row: pd.Series, mode_config: ModeConfig) -> bool:

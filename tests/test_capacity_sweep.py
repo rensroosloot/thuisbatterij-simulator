@@ -24,7 +24,7 @@ def test_capacity_sweep_generates_expected_capacity_points():
 
     capacities = CapacitySweepRunner.generate_capacities(config)
 
-    assert capacities == [1.0, 1.5, 2.0]
+    assert capacities == [0.0, 1.0, 1.5, 2.0]
 
 
 def test_capacity_sweep_rejects_more_than_200_points():
@@ -49,13 +49,16 @@ def test_capacity_sweep_runs_mode_1_and_calculates_marginal_columns():
 
     result = CapacitySweepRunner().run(_sweep_frame(), config)
 
-    assert result["capaciteit_kwh"].tolist() == [1.0, 2.0]
-    assert result["laadvermogen_kw"].tolist() == [4.0, 8.0]
-    assert result["ontlaadvermogen_kw"].tolist() == [2.0, 4.0]
-    assert result["aanschafprijs_eur"].tolist() == [600.0, 1100.0]
+    assert result["capaciteit_kwh"].tolist() == [0.0, 1.0, 2.0]
+    assert result["laadvermogen_kw"].tolist() == [0.0, 4.0, 8.0]
+    assert result["ontlaadvermogen_kw"].tolist() == [0.0, 2.0, 4.0]
+    assert result["aanschafprijs_eur"].tolist() == [0.0, 600.0, 1100.0]
+    assert result.loc[0, "jaarlijkse_besparing_eur"] == pytest.approx(0.0)
+    assert result.loc[0, "netladen_kwh"] == pytest.approx(0.0)
     assert "besparing_per_capaciteit_eur_per_kwh" in result.columns
     assert "marginale_besparing_eur_per_kwh" in result.columns
     assert pd.isna(result.loc[0, "marginale_besparing_eur_per_kwh"])
+    assert pd.isna(result.loc[0, "besparing_per_capaciteit_eur_per_kwh"])
 
 
 def test_capacity_sweep_recommendation_uses_selected_criterion():
@@ -98,10 +101,10 @@ def test_capacity_sweep_combined_scenario_annualizes_results():
         config,
     )
 
-    assert combined_years.loc[0, "jaarlijkse_besparing_eur"] == pytest.approx(
-        single_year.loc[0, "jaarlijkse_besparing_eur"]
+    assert combined_years.loc[1, "jaarlijkse_besparing_eur"] == pytest.approx(
+        single_year.loc[1, "jaarlijkse_besparing_eur"]
     )
-    assert combined_years.loc[0, "cycli_jaar"] == pytest.approx(single_year.loc[0, "cycli_jaar"])
+    assert combined_years.loc[1, "cycli_jaar"] == pytest.approx(single_year.loc[1, "cycli_jaar"])
 
 
 def test_capacity_sweep_uses_explicit_market_options():
@@ -115,5 +118,39 @@ def test_capacity_sweep_uses_explicit_market_options():
 
     result = CapacitySweepRunner().run(_sweep_frame(), config)
 
-    assert result["capaciteit_kwh"].tolist() == [2.4, 5.76, 8.64]
-    assert result["aanschafprijs_eur"].tolist() == [1339.0, 1938.0, 2667.0]
+    assert result["capaciteit_kwh"].tolist() == [0.0, 2.4, 5.76, 8.64]
+    assert result["aanschafprijs_eur"].tolist() == [0.0, 1339.0, 1938.0, 2667.0]
+
+
+def test_capacity_sweep_accepts_explicit_zero_market_option_once():
+    config = SweepConfig(
+        market_options=((0.0, 0.0), (2.4, 1339.0)),
+        charge_c_rate=1.0,
+        discharge_c_rate=1.0,
+        economic_lifetime_years=10,
+        mode=1,
+    )
+
+    capacities = CapacitySweepRunner.generate_capacities(config)
+
+    assert capacities == [0.0, 2.4]
+
+
+def test_capacity_sweep_minimum_soc_reduces_accessible_capacity():
+    config = SweepConfig(
+        capacity_min_kwh=1.0,
+        capacity_max_kwh=1.0,
+        capacity_step_kwh=1.0,
+        charge_c_rate=4.0,
+        discharge_c_rate=4.0,
+        purchase_base_eur=0.0,
+        purchase_eur_per_kwh=0.0,
+        economic_lifetime_years=10,
+        min_soc_pct=50.0,
+        mode=1,
+    )
+
+    result = CapacitySweepRunner().run(_sweep_frame(), config)
+
+    assert result.loc[1, "capaciteit_kwh"] == pytest.approx(1.0)
+    assert result.loc[1, "zelfvoorzienendheid_pct"] < 100.0

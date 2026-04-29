@@ -108,3 +108,8 @@
 2026-04-29 | codex   | review | UID-001 nagekeken en reviewbevindingen toegevoegd over sweep-configuratie, widgetconsistentie, detailperiode en encoding-opschoning
 2026-04-29 | codex   | setup  | agents.md uitgebreid met expliciete afspraak: UTF-8-bestand is leidend, console-mojibake is geen reviewbevinding
 2026-04-29 | codex   | review | UID-001 opnieuw nagekeken; twee open bevindingen toegevoegd over KPI-bron bij single-year scenario's en te dichte KPI-layout
+2026-04-29 | codex   | impl   | Slimme-modus prijshorizon aangepast: voor 13:00 rest van vandaag, vanaf 13:00 rest van vandaag plus volledige volgende kalenderdag
+2026-04-29 | codex   | impl   | Capaciteitssweep toont nu standaard ook 0 kWh als baseline zonder batterij, inclusief marktopties en runner-logica
+2026-04-29 | codex   | impl   | Minimale batterijlading (%) configureerbaar gemaakt met default 5%; werkt nu ook door in de capaciteitssweep
+2026-04-29 | codex   | impl   | UI toont nu naast zonne-zelfconsumptie ook laadbronnen van de batterij: totaal, geladen uit zon en geladen uit net
+2026-04-29 | codex   | impl   | Tooltip bij slimme-modus prijsstijging verduidelijkt nu dat round-trip rendement een minimale economische ondergrens oplegt

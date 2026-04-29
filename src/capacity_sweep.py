@@ -27,6 +27,7 @@ class SweepConfig:
     discharge_c_rate: float = 0.5
     fixed_charge_power_kw: float | None = None
     fixed_discharge_power_kw: float | None = None
+    min_soc_pct: float = 5.0
     purchase_base_eur: float = 0.0
     purchase_eur_per_kwh: float = 1000.0
     market_options: tuple[tuple[float, float], ...] = ()
@@ -62,34 +63,51 @@ class CapacitySweepRunner:
         year_count = len(scenario_frames)
         rows = []
         for capacity_kwh in self.generate_capacities(config):
-            charge_power_kw = config.fixed_charge_power_kw or capacity_kwh * config.charge_c_rate
-            discharge_power_kw = (
-                config.fixed_discharge_power_kw or capacity_kwh * config.discharge_c_rate
-            )
-            battery_config = BatteryConfig(
-                capacity_kwh=capacity_kwh,
-                charge_power_kw=charge_power_kw,
-                discharge_power_kw=discharge_power_kw,
-                charge_efficiency_pct=95.0,
-                discharge_efficiency_pct=95.0,
-            )
-            yearly_costed_frames = []
-            for yearly_frame in scenario_frames.values():
-                simulated = self._simulate(yearly_frame, battery_config, config)
-                yearly_costed_frames.append(self.tariff_engine.apply_battery_costs(simulated))
-            costed = pd.concat(yearly_costed_frames, axis=0).sort_index()
             purchase_price_eur = self.resolve_purchase_price_eur(capacity_kwh, config)
-            result = self.result_calculator.calculate(
-                costed,
-                ResultConfig(
-                    purchase_price_eur=purchase_price_eur,
-                    economic_lifetime_years=config.economic_lifetime_years,
-                    discount_rate_pct=config.discount_rate_pct,
-                    energy_price_indexation_pct=config.energy_price_indexation_pct,
-                    battery_capacity_kwh=capacity_kwh,
-                    degradation_pct_per_100_cycles=config.degradation_pct_per_100_cycles,
-                ),
-            )
+            if capacity_kwh == 0:
+                charge_power_kw = 0.0
+                discharge_power_kw = 0.0
+                costed = self._build_baseline_reference_frame(scenario_frames)
+                result = self.result_calculator.calculate(
+                    costed,
+                    ResultConfig(
+                        purchase_price_eur=0.0,
+                        economic_lifetime_years=config.economic_lifetime_years,
+                        discount_rate_pct=config.discount_rate_pct,
+                        energy_price_indexation_pct=config.energy_price_indexation_pct,
+                        battery_capacity_kwh=1.0,
+                        degradation_pct_per_100_cycles=0.0,
+                    ),
+                )
+            else:
+                charge_power_kw = config.fixed_charge_power_kw or capacity_kwh * config.charge_c_rate
+                discharge_power_kw = (
+                    config.fixed_discharge_power_kw or capacity_kwh * config.discharge_c_rate
+                )
+                battery_config = BatteryConfig(
+                    capacity_kwh=capacity_kwh,
+                    charge_power_kw=charge_power_kw,
+                    discharge_power_kw=discharge_power_kw,
+                    charge_efficiency_pct=95.0,
+                    discharge_efficiency_pct=95.0,
+                    min_soc_pct=config.min_soc_pct,
+                )
+                yearly_costed_frames = []
+                for yearly_frame in scenario_frames.values():
+                    simulated = self._simulate(yearly_frame, battery_config, config)
+                    yearly_costed_frames.append(self.tariff_engine.apply_battery_costs(simulated))
+                costed = pd.concat(yearly_costed_frames, axis=0).sort_index()
+                result = self.result_calculator.calculate(
+                    costed,
+                    ResultConfig(
+                        purchase_price_eur=purchase_price_eur,
+                        economic_lifetime_years=config.economic_lifetime_years,
+                        discount_rate_pct=config.discount_rate_pct,
+                        energy_price_indexation_pct=config.energy_price_indexation_pct,
+                        battery_capacity_kwh=capacity_kwh,
+                        degradation_pct_per_100_cycles=config.degradation_pct_per_100_cycles,
+                    ),
+                )
             annual_saving_eur = result.annual_saving_eur / year_count
             payback_years = (
                 purchase_price_eur / annual_saving_eur if annual_saving_eur > 0 else float("inf")
@@ -158,7 +176,7 @@ class CapacitySweepRunner:
     def add_marginal_columns(dataframe: pd.DataFrame) -> pd.DataFrame:
         result = dataframe.copy()
         result["besparing_per_capaciteit_eur_per_kwh"] = (
-            result["jaarlijkse_besparing_eur"] / result["capaciteit_kwh"]
+            result["jaarlijkse_besparing_eur"] / result["capaciteit_kwh"].replace(0, pd.NA)
         )
         result["marginale_besparing_eur_per_kwh"] = result[
             "jaarlijkse_besparing_eur"
@@ -172,7 +190,8 @@ class CapacitySweepRunner:
     def generate_capacities(config: SweepConfig) -> list[float]:
         CapacitySweepRunner._validate_config(config)
         if config.market_options:
-            return [capacity_kwh for capacity_kwh, _ in config.market_options]
+            capacities = [capacity_kwh for capacity_kwh, _ in config.market_options]
+            return capacities if capacities and capacities[0] == 0 else [0.0, *capacities]
         count = int((config.capacity_max_kwh - config.capacity_min_kwh) // config.capacity_step_kwh)
         capacities = [
             round(config.capacity_min_kwh + index * config.capacity_step_kwh, 10)
@@ -180,7 +199,7 @@ class CapacitySweepRunner:
         ]
         if capacities[-1] < config.capacity_max_kwh:
             capacities.append(round(config.capacity_max_kwh, 10))
-        return capacities
+        return capacities if capacities and capacities[0] == 0 else [0.0, *capacities]
 
     @staticmethod
     def find_recommendation(dataframe: pd.DataFrame, criterion: str) -> pd.Series:
@@ -199,10 +218,38 @@ class CapacitySweepRunner:
 
     @staticmethod
     def resolve_purchase_price_eur(capacity_kwh: float, config: SweepConfig) -> float:
+        if capacity_kwh == 0:
+            return 0.0
         if config.market_options:
             market_price_by_capacity = dict(config.market_options)
             return market_price_by_capacity[capacity_kwh]
         return config.purchase_base_eur + (config.purchase_eur_per_kwh * capacity_kwh)
+
+    def _build_baseline_reference_frame(
+        self,
+        scenario_frames: dict[int, pd.DataFrame],
+    ) -> pd.DataFrame:
+        yearly_costed_frames = []
+        for yearly_frame in scenario_frames.values():
+            baseline = self.tariff_engine.apply_baseline_costs(yearly_frame)
+            baseline = baseline.copy()
+            baseline["import_met_batterij_kwh"] = baseline["import_zonder_batterij_kwh"]
+            baseline["export_met_batterij_kwh"] = baseline["export_zonder_batterij_kwh"]
+            baseline["kosten_met_batterij_eur"] = baseline["kosten_zonder_batterij_eur"]
+            baseline["besparing_interval_eur"] = 0.0
+            baseline["netladen_kwh"] = 0.0
+            baseline["batterij_export_kwh"] = 0.0
+            baseline["laad_kwh"] = 0.0
+            baseline["ontlaad_kwh"] = 0.0
+            baseline["laad_uit_solar_kwh"] = 0.0
+            baseline["laad_uit_net_kwh"] = 0.0
+            baseline["ontlaad_naar_huis_kwh"] = 0.0
+            baseline["ontlaad_naar_net_kwh"] = 0.0
+            baseline["round_trip_loss_kwh"] = 0.0
+            baseline["soc_kwh"] = 0.0
+            baseline["soc_pct"] = 0.0
+            yearly_costed_frames.append(baseline)
+        return pd.concat(yearly_costed_frames, axis=0).sort_index()
 
     @staticmethod
     def _validate_config(config: SweepConfig) -> None:
@@ -210,15 +257,15 @@ class CapacitySweepRunner:
             if len(config.market_options) > config.max_points:
                 raise ValueError("Sweep may contain at most 200 market options.")
             capacities = [capacity_kwh for capacity_kwh, _ in config.market_options]
-            if any(capacity_kwh <= 0 for capacity_kwh in capacities):
-                raise ValueError("Market option capacity must be greater than 0 kWh.")
+            if any(capacity_kwh < 0 for capacity_kwh in capacities):
+                raise ValueError("Market option capacity must be 0 or greater in kWh.")
             if any(price_eur < 0 for _, price_eur in config.market_options):
                 raise ValueError("Market option purchase price must be non-negative.")
             if capacities != sorted(set(capacities)):
                 raise ValueError("Market option capacities must be unique and sorted ascending.")
             return
-        if config.capacity_min_kwh <= 0:
-            raise ValueError("Sweep minimum capacity must be greater than 0 kWh.")
+        if config.capacity_min_kwh < 0:
+            raise ValueError("Sweep minimum capacity must be 0 or greater in kWh.")
         if config.capacity_max_kwh < config.capacity_min_kwh:
             raise ValueError("Sweep maximum capacity must be at least the minimum capacity.")
         if config.capacity_step_kwh <= 0:
@@ -244,3 +291,5 @@ class CapacitySweepRunner:
             raise ValueError("Sweep charge C-rate must be greater than 0.")
         if config.fixed_discharge_power_kw is None and config.discharge_c_rate <= 0:
             raise ValueError("Sweep discharge C-rate must be greater than 0.")
+        if config.min_soc_pct < 0 or config.min_soc_pct >= 100:
+            raise ValueError("Sweep minimum SoC must be between 0 and 100%.")
